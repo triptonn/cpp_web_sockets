@@ -12,7 +12,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-// Modern C++ error handling using exceptions
 [[noreturn]] void error(const std::string &msg) {
     throw std::runtime_error(msg + ": " + std::string(strerror(errno)));
 }
@@ -40,16 +39,16 @@ int main(int argc, char *argv[]) {
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
 
-        // Add better port number validation
         int portno;
         try {
             portno = std::stoi(argv[1]);
-            if (portno <= 0 || portno > 65535) {
+            if (portno <= 1023 || portno > 65535) {
                 std::cerr << "ERROR: Port number must be between 1 and 65535\n";
                 return 1;
             }
         } catch (const std::invalid_argument &e) {
-            std::cerr << "ERROR: Invalid port number - must be a number\n";
+            std::cerr
+                << "ERROR: Invalid port number - must be a integer number\n";
             return 1;
         } catch (const std::out_of_range &e) {
             std::cerr << "ERROR: Port number out of range\n";
@@ -58,13 +57,13 @@ int main(int argc, char *argv[]) {
 
         server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd < 0) {
-            error("Error opening socket");
+            error("ERROR: Opening socket failed");
         }
 
         int opt = 1;
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
             0) {
-            error("ERROR setting socket options");
+            error("ERROR: Setting socket options failed");
         }
 
         struct sockaddr_in serv_addr{};  // Zero-initialize using {}
@@ -74,7 +73,7 @@ int main(int argc, char *argv[]) {
 
         if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&serv_addr),
                  sizeof(serv_addr)) < 0) {
-            error("ERROR on binding");
+            error("ERROR: Binding to socket failed");
         }
 
         while (true) {
@@ -89,7 +88,7 @@ int main(int argc, char *argv[]) {
                        reinterpret_cast<struct sockaddr *>(&cli_addr), &clilen);
 
             if (client_fd < 0) {
-                error("Error on accept");
+                error("ERROR: Accept failed");
             }
 
             bool isconnected = true;
@@ -97,32 +96,32 @@ int main(int argc, char *argv[]) {
                 std::array<char, 256> buffer{};  // Zero-initialized buffer
                 int n = read(client_fd, buffer.data(), buffer.size() - 1);
                 if (n < 0) {
-                    error("ERROR reading from socket");
+                    error("ERROR: Reading from socket failed");
                 }
+                std::string command(buffer.data());
 
-                if (buffer.data() == "abort") {
-                    std::cout << "abort came through!\n";
-                    std::cout << buffer.data() << '\n';
-                    std::string response = "acknowledged";
+                if (command == "QUIT" || command == "EXIT") {
+                    std::string response = "Goodbye!";
                     n = write(client_fd, response.c_str(), response.length());
                     if (n < 0) {
-                        error("ERROR writing to socket");
+                        error("ERROR: Writing to socket failed during exiting "
+                              "the application");
                     }
-
                     isconnected = false;
-
                     close(client_fd);
                     client_fd = -1;
-                    close(server_fd);
-                    server_fd = -1;
-
-                } else {
-                    std::cout << buffer.data() << '\n';
-                    std::string response = "received";
+                    continue;
+                } else if (command.substr(0, 5) == "ECHO ") {
+                    std::string echoMsg = command.substr(5);
+                    std::string response = "Echo: " + echoMsg;
                     n = write(client_fd, response.c_str(), response.length());
                     if (n < 0) {
-                        error("ERROR writing to socket");
+                        error("ERROR: Writing to socket failed during echoing "
+                              "message back to sender");
                     }
+                } else {
+                    // TODO: Implement message forwarding to other clients
+                    std::cout << "Where does the message need to go?\n";
                 }
             }
         }
@@ -135,3 +134,32 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 }
+
+enum class ChatErrorCategory {
+    NONE,
+    CONNECTION,
+    PROTOCOL,
+    AUTHENTICATION,
+    PERMISSION,
+    RESOURCE,
+    SYSTEM
+};
+
+enum class ConnectionError {
+    NONE,
+    CONNECTION_REFUSED,
+    TIMEOUT,
+    HOST_UNREACHABLE,
+    CONNECTION_RESET,
+    SERVER_FULL
+};
+
+enum class ProtocolError { NONE };
+
+enum class AuthenticationError { NONE };
+
+enum class PermissionError { NONE };
+
+enum class ResourceError { NONE };
+
+enum class SystemError { NONE };
