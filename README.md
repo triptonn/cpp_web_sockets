@@ -1,6 +1,6 @@
-# Simple C++ Chat Server
+# C++ Network Programming Learning Project
 
-A learning project implementing a basic chat server and client using C++ sockets with logging capabilities.
+A learning project for implementing various network protocols in C++, starting with HTTP and progressing to WebSocket implementations.
 
 ## Project Structure
 
