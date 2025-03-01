@@ -5,13 +5,21 @@ A learning project for implementing various network protocols in C++, starting w
 ## Project Structure
 
 project/
+
 ├── client/
+
 │   └── myclient.cpp
+
 ├── server/
+
 │   └── myserver.cpp
+
 ├── core/
+
 │   ├── logger.hpp
+
 │   └── logger.cpp
+
 └── CMakeLists.txt
 
 ## Features
