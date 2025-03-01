@@ -65,6 +65,7 @@ int main() {
                         std::cerr << "Failed to send exit call\n";
                     }
                 }
+                server_log.write("Server terminated by user");
                 break;
             }
         }
@@ -97,6 +98,8 @@ int main() {
             }
         }
     }
-    std::cout << "Shutting down server\n";
+    std::string end_msg = "Shutting down server\n";
+    std::cout << end_msg;
+    server_log.write(end_msg);
     return EXIT_SUCCESS;
 }
