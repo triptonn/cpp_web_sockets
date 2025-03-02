@@ -19,7 +19,7 @@ const int MAX_FD = FD_SETSIZE;
 int main() {
     Logger server_log("server.log");
 
-    short int max_fd = 100;
+    int max_fd = 100;
     timeval timeout;
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -31,7 +31,8 @@ int main() {
     addr.sin_port = htons(8080);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    int bind_return = bind(server_fd, (struct sockaddr *)&addr, sizeof(addr));
+    int bind_return = bind(
+        server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
 
     int listen_return = listen(server_fd, 100);
 
@@ -44,15 +45,36 @@ int main() {
         FD_SET(STDIN_FILENO, &read_fds);
         FD_SET(server_fd, &read_fds);
 
+        for (int client_fd : client_fds) {
+            FD_SET(client_fd, &read_fds);
+        }
+
+        max_fd = server_fd;
+        for (int client_fd : client_fds) {
+            max_fd = std::max(max_fd, client_fd);
+        }
+        max_fd = std::max(max_fd, STDIN_FILENO);
+
+        select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
+
         if (FD_ISSET(server_fd, &read_fds)) {
-            int new_client_fd = accept(server_fd, nullptr, nullptr);
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            int new_client_fd = accept(
+                server_fd, reinterpret_cast<struct sockaddr *>(&client_addr),
+                &client_len);
+            if (new_client_fd < 0) {
+                server_log.write("Failed to accept new client connection");
+                continue;
+            } else {
+                std::string client_ip = inet_ntoa(client_addr.sin_addr);
+                server_log.write("New client connected from " + client_ip +
+                                 " with fd: " + std::to_string(new_client_fd));
+            }
+
             client_fds.insert(client_fds.begin(), new_client_fd);
             server_log.write("New client connected: " +
                              std::to_string(new_client_fd));
-        }
-
-        for (int client_fd : client_fds) {
-            FD_SET(client_fd, &read_fds);
         }
 
         if (FD_ISSET(STDIN_FILENO, &read_fds)) {
@@ -69,8 +91,6 @@ int main() {
                 break;
             }
         }
-
-        select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
 
         for (std::vector<int>::iterator it = client_fds.begin();
              it != client_fds.end();) {

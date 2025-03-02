@@ -22,7 +22,8 @@ int main() {
     addr.sin_port = htons(8080);
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    if (connect(client_fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (connect(client_fd, reinterpret_cast<struct sockaddr *>(&addr),
+                sizeof(addr)) < 0) {
         std::cerr << "Connect failed\n";
         close(client_fd);
         return 1;
