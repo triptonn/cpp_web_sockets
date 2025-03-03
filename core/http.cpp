@@ -62,8 +62,6 @@ void HttpRequest::create_get(std::string request_uri,
         path += "?";
         int size = parameters.size();
 
-        // TODO: Check for '+' or other special characters
-
         for (const auto [name, value] : parameters) {
             std::string processed_name;
             std::string processed_value;
@@ -96,6 +94,18 @@ void HttpRequest::create_get(std::string request_uri,
     }
     version = "HTTP/1.1";
     set_header("Host", "localhost");
+}
+
+void HttpRequest::create_post(std::string request_uri,
+                              std::map<std::string, std::string> data) {
+    method = "POST";
+    path = request_uri;
+    if (!data.empty()) {
+        for (const auto [key, value] : data) {
+            std::string processed_key;
+            std::string processed_value;
+        };
+    }
 }
 
 std::string HttpRequest::to_string() const {

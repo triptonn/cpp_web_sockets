@@ -29,6 +29,8 @@ class HttpRequest {
 
     void create_get(std::string request_uri,
                     std::map<std::string, std::string> parameters = {});
+    void create_post(std::string request_uri,
+                     std::map<std::string, std::string> parameters = {});
 
     std::string to_string() const;
 };
