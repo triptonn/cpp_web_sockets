@@ -10,6 +10,10 @@
 
 int main(int argc, char *argv[]) { return Catch::Session().run(argc, argv); }
 
+/////////////////////////////////
+// HTTP Request Parsing
+/////////////////////////////////
+
 TEST_CASE("HTTP Request Parsing - Basic GET", "[http]") {
     std::string sample_get_request = "GET /index.html HTTP/1.1\r\n"
                                      "Host: example.com\r\n"
@@ -78,6 +82,80 @@ TEST_CASE("HTTP Request Parsing - Edge Cases", "[http]") {
         REQUIRE(request.has_header("CONTENT-TYPE"));
     }
 }
+
+/////////////////////////////////
+// HTTP Request Creation
+/////////////////////////////////
+
+TEST_CASE("HTTP Client Request Creation", "[http]") {
+    SECTION("Create basic GET request") {
+        HttpRequest request;
+        REQUIRE_NOTHROW(request.create_get("/index.html"));
+
+        std::string expected_request = "GET /index.html HTTP/1.1\r\n"
+                                       "Host: localhost\r\n"
+                                       "\r\n";
+
+        REQUIRE(request.to_string() == expected_request);
+    }
+
+    SECTION("Add custom headers to GET request") {
+        HttpRequest request;
+        request.create_get("/api/data");
+
+        request.set_header("Authorization", "Bearer token123");
+        request.set_header("Accept", "application/json");
+        request.set_header("X-Customer-Header", "custom-value");
+
+        std::string request_str = request.to_string();
+
+        REQUIRE(request.get_header("Authorization") == "Bearer token123");
+        REQUIRE(request.get_header("Accept") == "application/json");
+        REQUIRE(request.get_header("X-Customer-Header") == "custom-value");
+        REQUIRE(request_str.find("Authorization: Bearer token123\r\n") !=
+                std::string::npos);
+        REQUIRE(request_str.find("Accept: application/json\r\n") !=
+                std::string::npos);
+        REQUIRE(request_str.find("X-Customer-Header: custom-value\r\n") !=
+                std::string::npos);
+    }
+
+    SECTION("GET request with query parameters") {
+        HttpRequest request;
+        std::map<std::string, std::string> params = {
+            {"page", "1"}, {"limit", "10"}, {"sort", "desc"}};
+
+        REQUIRE_NOTHROW(request.create_get("/api/items", params));
+
+        std::string request_str = request.to_string();
+        REQUIRE(request.path.find("/api/items?") == 0);
+        REQUIRE(request.path.find("page=1") != std::string::npos);
+        REQUIRE(request.path.find("limit=10") != std::string::npos);
+        REQUIRE(request.path.find("sort=desc") != std::string::npos);
+        REQUIRE(request.path.find("&") != std::string::npos);
+
+        std::string path = request.path;
+        REQUIRE(path.find("page=1") != std::string::npos);
+        REQUIRE(path.find("limit=10") != std::string::npos);
+        REQUIRE(path.find("sort=desc") != std::string::npos);
+    }
+
+    SECTION("GET request with special characters in parameters") {
+        HttpRequest request;
+        std::map<std::string, std::string> params = {{"search", "hello world"},
+                                                     {"tag", "c++"}};
+
+        REQUIRE_NOTHROW(request.create_get("/api/search", params));
+
+        std::string path = request.path;
+        REQUIRE(path.find("searchh=hello%20world") != std::string::npos);
+        REQUIRE(path.find("tag=c%2B%2B") != std::string::npos);
+    }
+}
+
+/////////////////////////////////
+// HTTP Response Creation
+/////////////////////////////////
 
 TEST_CASE("HTTP Response - Basic Construction", "[http]") {
     HttpResponse response;

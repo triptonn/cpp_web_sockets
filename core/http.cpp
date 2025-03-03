@@ -52,6 +52,46 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
     return request;
 }
 
+std::string HttpRequest::to_string() const {
+    auto headers_copy = headers;
+
+    std::ostringstream request_stream;
+    request_stream << method << " " << path << " " << version << "\r\n";
+    for (const auto [name, value] : headers_copy) {
+        std::string display_name;
+        bool capitalize = true;
+        for (char c : name) {
+            if (capitalize && std::isalpha(c)) {
+                display_name += std::toupper(c);
+                capitalize = false;
+            } else if (c == '-') {
+                display_name += c;
+                capitalize = true;
+            } else {
+                display_name += c;
+            }
+        }
+        request_stream << display_name << ": " << value << "\r\n";
+    }
+
+    request_stream << "\r\n";
+    if (!body.empty()) {
+        request_stream << body;
+    }
+
+    return request_stream.str();
+}
+
+HttpResponse HttpResponse::switching_protocol() {
+    // TODO: Implment correct header values
+    HttpResponse response(101, "Switching Protocols");
+    response.set_header("Upgrade", "websocket");
+    response.set_header("Connection", "Upgrade");
+    response.set_header("Sec-WebSocket-Accept", "SAMPLE_CODE");
+
+    return response;
+}
+
 HttpResponse HttpResponse::ok(const std::string &body) {
     HttpResponse response(200, "OK");
     if (!body.empty()) {
@@ -107,7 +147,6 @@ std::string HttpResponse::to_string() const {
                 display_name += c;
             }
         }
-        std::cout << display_name << ": " << value << "\r\n";
         response_stream << display_name << ": " << value << "\r\n";
     }
 

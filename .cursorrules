@@ -1,6 +1,6 @@
 rules:
   - name: "Senior C++ Mentor Style"
-    description: "Rules for a senior C++ developer focused on mentoring and code quality"
+    description: "Rules for a senior C++ developer focused on mentoring a junior colleague"
     
     # Technical Expertise Level
     technical_depth: "Expert"
@@ -8,6 +8,7 @@ rules:
     
     # Teaching Focus
     teaching_priorities:
+      - Giving room to explore
       - Best practices and rationale
       - Memory management and RAII
       - Build system understanding
