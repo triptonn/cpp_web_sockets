@@ -68,8 +68,9 @@ void HttpRequest::create_get(std::string request_uri,
             std::string processed_name;
             std::string processed_value;
 
-            if (name.find(" ") != std::string::npos) {
-                processed_name = handle_space_for_path(name);
+            if (name.find(" ") != std::string::npos ||
+                name.find("+") != std::string::npos) {
+                processed_name = handle_special_chars_for_path(name);
                 path += processed_name;
             } else {
                 path += name;
@@ -77,11 +78,10 @@ void HttpRequest::create_get(std::string request_uri,
 
             path += "=";
 
-            if (value.find(" ") != std::string::npos) {
-                std::cout << "Found value with ' ': " << value << "\n";
-                processed_value = handle_space_for_path(value);
+            if (value.find(" ") != std::string::npos ||
+                value.find("+") != std::string::npos) {
+                processed_value = handle_special_chars_for_path(value);
                 path += processed_value;
-                std::cout << "Processed to: " << processed_value << "\n";
             } else {
                 path += value;
             }
@@ -94,7 +94,6 @@ void HttpRequest::create_get(std::string request_uri,
             }
         }
     }
-    std::cout << "Request path: " << path << "\n";
     version = "HTTP/1.1";
     set_header("Host", "localhost");
 }

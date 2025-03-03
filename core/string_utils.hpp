@@ -8,6 +8,6 @@
 #include <string>
 
 std::string format_header_name(std::string header_name);
-std::string handle_space_for_path(std::string string_value);
+std::string handle_special_chars_for_path(std::string string_value);
 
 #endif  // STRING_UTILS_HPP_
