@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(core
     core/logger.cpp
     core/http.cpp
+    core/string_utils.cpp
 )
 
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY /workspaces/web_sockets/build/server/)

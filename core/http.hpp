@@ -28,7 +28,7 @@ class HttpRequest {
     void set_header(const std::string &key, const std::string &value);
 
     void create_get(std::string request_uri,
-                    std::map<std::string, std::string> parameters);
+                    std::map<std::string, std::string> parameters = {});
 
     std::string to_string() const;
 };
@@ -54,31 +54,6 @@ inline void HttpRequest::set_header(const std::string &key,
     std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
                    [](unsigned char c) { return std::tolower(c); });
     headers[lower_key] = value;
-}
-
-inline void
-HttpRequest::create_get(std::string request_uri,
-                        std::map<std::string, std::string> parameters = {}) {
-    method = "GET";
-    path = request_uri;
-    if (!parameters.empty()) {
-        path += "?";
-        int size = parameters.size();
-
-        for (const auto [name, value] : parameters) {
-            if (name == "page" || name == "sort" || name == "limit") {
-                path += name + "=" + value;
-            }
-            if (size > 1) {
-                path += "&";
-                size -= 1;
-            } else {
-                continue;
-            }
-        }
-    }
-    version = "HTTP/1.1";
-    set_header("Host", "localhost");
 }
 
 /////////////////////////////////

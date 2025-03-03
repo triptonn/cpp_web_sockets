@@ -2,10 +2,12 @@
 //
 //
 
-#include "http.hpp"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+
+#include "http.hpp"
+#include "string_utils.hpp"
 
 HttpRequest HttpRequest::parse(const std::string &raw_request) {
     HttpRequest request;
@@ -52,25 +54,58 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
     return request;
 }
 
+void HttpRequest::create_get(std::string request_uri,
+                             std::map<std::string, std::string> parameters) {
+    method = "GET";
+    path = request_uri;
+    if (!parameters.empty()) {
+        path += "?";
+        int size = parameters.size();
+
+        // TODO: Check for '+' or other special characters
+
+        for (const auto [name, value] : parameters) {
+            std::string processed_name;
+            std::string processed_value;
+
+            if (name.find(" ") != std::string::npos) {
+                processed_name = handle_space_for_path(name);
+                path += processed_name;
+            } else {
+                path += name;
+            }
+
+            path += "=";
+
+            if (value.find(" ") != std::string::npos) {
+                std::cout << "Found value with ' ': " << value << "\n";
+                processed_value = handle_space_for_path(value);
+                path += processed_value;
+                std::cout << "Processed to: " << processed_value << "\n";
+            } else {
+                path += value;
+            }
+
+            if (size > 1) {
+                path += "&";
+                size -= 1;
+            } else {
+                continue;
+            }
+        }
+    }
+    std::cout << "Request path: " << path << "\n";
+    version = "HTTP/1.1";
+    set_header("Host", "localhost");
+}
+
 std::string HttpRequest::to_string() const {
     auto headers_copy = headers;
 
     std::ostringstream request_stream;
     request_stream << method << " " << path << " " << version << "\r\n";
     for (const auto [name, value] : headers_copy) {
-        std::string display_name;
-        bool capitalize = true;
-        for (char c : name) {
-            if (capitalize && std::isalpha(c)) {
-                display_name += std::toupper(c);
-                capitalize = false;
-            } else if (c == '-') {
-                display_name += c;
-                capitalize = true;
-            } else {
-                display_name += c;
-            }
-        }
+        std::string display_name = format_header_name(name);
         request_stream << display_name << ": " << value << "\r\n";
     }
 
@@ -134,19 +169,7 @@ std::string HttpResponse::to_string() const {
     }
 
     for (const auto [name, value] : headers_copy) {
-        std::string display_name;
-        bool capitalize = true;
-        for (char c : name) {
-            if (capitalize && std::isalpha(c)) {
-                display_name += std::toupper(c);
-                capitalize = false;
-            } else if (c == '-') {
-                display_name += c;
-                capitalize = true;
-            } else {
-                display_name += c;
-            }
-        }
+        std::string display_name = format_header_name(name);
         response_stream << display_name << ": " << value << "\r\n";
     }
 

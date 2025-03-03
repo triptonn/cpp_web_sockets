@@ -148,7 +148,7 @@ TEST_CASE("HTTP Client Request Creation", "[http]") {
         REQUIRE_NOTHROW(request.create_get("/api/search", params));
 
         std::string path = request.path;
-        REQUIRE(path.find("searchh=hello%20world") != std::string::npos);
+        REQUIRE(path.find("search=hello%20world") != std::string::npos);
         REQUIRE(path.find("tag=c%2B%2B") != std::string::npos);
     }
 }
