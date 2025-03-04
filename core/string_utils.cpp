@@ -23,13 +23,35 @@ std::string format_header_name(std::string header_name) {
     return formatted_header_name;
 }
 
-std::string handle_special_chars_for_path(std::string string_value) {
+std::string percent_encoding(std::string string_value) {
     std::string processed_string;
     for (char c : string_value) {
         if (c == ' ') {
             processed_string += "%20";
         } else if (c == '+') {
             processed_string += "%2B";
+        } else if (c == '!') {
+            processed_string += "%21";
+        } else if (c == '@') {
+            processed_string += "%40";
+        } else if (c == '#') {
+            processed_string += "%23";
+        } else if (c == '$') {
+            processed_string += "%24";
+        } else if (c == '%') {
+            processed_string += "%25";
+        } else if (c == '^') {
+            processed_string += "%5E";
+        } else if (c == '&') {
+            processed_string += "%26";
+        } else if (c == '*') {
+            processed_string += "%2A";
+        } else if (c == '(') {
+            processed_string += "%28";
+        } else if (c == ')') {
+            processed_string += "%29";
+        } else if (c == ',') {
+            processed_string += "%2C";
         } else {
             processed_string += c;
         }

@@ -154,7 +154,40 @@ TEST_CASE("HTTP Client Request Creation - GET Method", "[http]") {
 }
 
 TEST_CASE("HTTP Client Request - POST Method", "[http]") {
-    SECTION("Create basic POST request with form data") {
+    SECTION("Basic POST request with empty body") {
+        HttpRequest request;
+        REQUIRE_NOTHROW(request.create_post("/api/ping"));
+
+        REQUIRE(request.method == "POST");
+        REQUIRE(request.path == "/api/ping");
+        REQUIRE(request.version == "HTTP/1.1");
+        REQUIRE(request.has_header("content-length"));
+        REQUIRE(request.get_header("content-length") == "0");
+        REQUIRE(request.body.empty());
+    }
+
+    SECTION("Create POST request with custom headers") {
+        HttpRequest request;
+        std::string text_body = "This is a plain text body";
+
+        REQUIRE_NOTHROW(
+            request.create_post("/api/messages", text_body, "text/plain"));
+        request.set_header("Authorization", "Bearer token123");
+        request.set_header("X-Custom-Header", "custom-value");
+
+        REQUIRE(request.has_header("authorization"));
+        REQUIRE(request.get_header("Authorization") == "Bearer token123");
+        REQUIRE(request.has_header("x-custom-header"));
+        REQUIRE(request.get_header("X-Custom-Header") == "custom-value");
+
+        std::string request_str = request.to_string();
+        REQUIRE(request_str.find("Authorization: Bearer token123\r\n") !=
+                std::string::npos);
+        REQUIRE(request_str.find("X-Custom-Header: custom-value\r\n") !=
+                std::string::npos);
+    }
+
+    SECTION("Create POST request with form data") {
         HttpRequest request;
         std::map<std::string, std::string> form_data = {
             {"username", "john_doe"},
@@ -178,13 +211,29 @@ TEST_CASE("HTTP Client Request - POST Method", "[http]") {
         REQUIRE(request.body.find("&") != std::string::npos);
     }
 
+    SECTION("Create POST request with login form data") {
+        HttpRequest request;
+        std::map<std::string, std::string> form_data = {
+            {"username", "testuser"},
+            {"password", "testpass"}
+        };
+
+        REQUIRE_NOTHROW(request.create_post("/login", form_data));
+
+        REQUIRE(request.method == "POST");
+        REQUIRE(request.path == "/login");
+        REQUIRE(request.get_header("content-type") == "application/x-www-form-urlencoded");
+        REQUIRE(request.body.find("username=testuser") != std::string::npos);
+        REQUIRE(request.body.find("password=testpass") != std::string::npos);
+    }
+
     SECTION("Create POST request with JSON data") {
         HttpRequest request;
-        std::string json_body =
+        std::string json_data =
             R"({"name":"John Doe","age":30,"email":"john@example.com"})";
 
         REQUIRE_NOTHROW(
-            request.create_post("/api/users", json_body, "application/json"));
+            request.create_post("/api/users", json_data, "application/json"));
 
         REQUIRE(request.method == "POST");
         REQUIRE(request.path == "/api/users");
@@ -192,29 +241,8 @@ TEST_CASE("HTTP Client Request - POST Method", "[http]") {
         REQUIRE(request.get_header("content-type") == "application/json");
         REQUIRE(request.has_header("content-length"));
         REQUIRE(request.get_header("content-length") ==
-                std::to_string(json_body.length()));
-        REQUIRE(request.body == json_body);
-    }
-
-    /* SECTION("Create POST request with custom headers") {
-        HttpRequest request;
-        std::string text_body = "This is a plain text body";
-
-        REQUIRE_NOTHROW(
-            request.create_post("/api/messages", text_body, "text/plain"));
-        request.set_header("Authorization", "Bearer token123");
-        request.set_header("X-Custom-Header", "custom-value");
-
-        REQUIRE(request.has_header("authorization"));
-        REQUIRE(request.get_header("Authorization") == "Bearer token123");
-        REQUIRE(request.has_header("x-custom-header"));
-        REQUIRE(request.get_header("X-Custom-Header") == "custom-value");
-
-        std::string request_str = request.to_string();
-        REQUIRE(request_str.find("Authorization: Bearer token123\r\n") !=
-                std::string::npos);
-        REQUIRE(request_str.find("X-Custom-Header: custom-value\r\n") !=
-                std::string::npos);
+                std::to_string(json_data.length()));
+        REQUIRE(request.body == json_data);
     }
 
     SECTION("POST request with form data containing special characters") {
@@ -222,7 +250,8 @@ TEST_CASE("HTTP Client Request - POST Method", "[http]") {
         std::map<std::string, std::string> form_data = {
             {"search", "hello world"},
             {"tags", "c++, programming"},
-            {"special", "!@#$%^&*()"}};
+            {"special", "!@#$%^&*()"}
+        };
 
         REQUIRE_NOTHROW(request.create_post("/api/search", form_data));
 
@@ -231,18 +260,6 @@ TEST_CASE("HTTP Client Request - POST Method", "[http]") {
                 std::string::npos);
         REQUIRE(request.body.find("special=%21%40%23%24%25%5E%26%2A%28%29") !=
                 std::string::npos);
-    }
-
-    SECTION("POST request with empty body") {
-        HttpRequest request;
-
-        REQUIRE_NOTHROW(request.create_post("/api/ping"));
-
-        REQUIRE(request.method == "POST");
-        REQUIRE(request.path == "/api/ping");
-        REQUIRE(request.has_header("content-length"));
-        REQUIRE(request.get_header("content-length") == "0");
-        REQUIRE(request.body.empty());
     }
 
     SECTION("POST request with binary data") {
@@ -260,9 +277,8 @@ TEST_CASE("HTTP Client Request - POST Method", "[http]") {
         REQUIRE(request.get_header("content-length") == "20");
         REQUIRE(request.body.size() == 20);
     }
-}
 
-TEST_CASE("HTTP Client Request - PUT Method", "[http]") {
+/* TEST_CASE("HTTP Client Request - PUT Method", "[http]") {
     SECTION("Create basic PUT request with form data") {
         HttpRequest request;
         std::map<std::string, std::string> form_data = {

@@ -20,6 +20,8 @@ public:
     std::map<std::string, std::string> headers;
     std::string body;
 
+
+    // Default constructor just creating an empty HttpRequest shell
     HttpRequest() {}
 
     static HttpRequest parse(const std::string &raw_request);
@@ -37,13 +39,21 @@ public:
                     const std::map<std::string, std::string> parameters = {},
                     std::string content_type = "application/x-www-form-urlencoded");
 
+    void create_post(const std::string& request_uri) {
+        method = "POST";
+        path = request_uri;
+        version = "HTTP/1.1";
+        set_header("host", "localhost");
+        set_header("content-length", "0");
+    };
+
+    void create_post(const std::string& request_uri,
+                     const std::map<std::string, std::string>& form_data);
+
     template<typename T>
     void create_post(const std::string& request_uri,
                     const T& data,
                     const std::string& content_type = "application/json");
-
-    void create_post(const std::string& request_uri,
-                     const std::map<std::string, std::string>& form_data);
 };
 
 template<typename T>

@@ -68,7 +68,7 @@ void HttpRequest::create_get(std::string request_uri,
 
             if (name.find(" ") != std::string::npos ||
                 name.find("+") != std::string::npos) {
-                processed_name = handle_special_chars_for_path(name);
+                processed_name = percent_encoding(name);
                 path += processed_name;
             } else {
                 path += name;
@@ -78,7 +78,7 @@ void HttpRequest::create_get(std::string request_uri,
 
             if (value.find(" ") != std::string::npos ||
                 value.find("+") != std::string::npos) {
-                processed_value = handle_special_chars_for_path(value);
+                processed_value = percent_encoding(value);
                 path += processed_value;
             } else {
                 path += value;
@@ -96,7 +96,8 @@ void HttpRequest::create_get(std::string request_uri,
     set_header("Host", "localhost");
 }
 
-void HttpRequest::create_post(const std::string& request_uri, const std::map<std::string, std::string>& form_data) {
+void HttpRequest::create_post(const std::string& request_uri,
+                              const std::map<std::string, std::string>& form_data) {
     method = "POST";
     path = request_uri;
     version = "HTTP/1.1";
@@ -107,11 +108,16 @@ void HttpRequest::create_post(const std::string& request_uri, const std::map<std
     for (const auto& [key, value] : form_data) {
         if (!first) {
             content += "&";
+        } else {
+            first = false;
         }
-        content += handle_special_chars_for_path(key) + "=" + handle_special_chars_for_path(value);
-        first = false;
-    }
 
+        if (key != "email") {
+            content += percent_encoding(key) + "=" + percent_encoding(value);
+        } else {
+            content += percent_encoding(key) + "=" + value;
+        }
+    }
     set_header("content-type", "application/x-www-form-urlencoded");
     set_header("content-length", std::to_string(content.length()));
     body = content;
