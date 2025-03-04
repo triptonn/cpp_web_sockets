@@ -3,6 +3,7 @@
 //
 
 #include <algorithm>
+#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -54,8 +55,9 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
     return request;
 }
 
-void HttpRequest::create_get(std::string request_uri,
-                             std::map<std::string, std::string> parameters) {
+void HttpRequest::create_get(
+    const std::string &request_uri,
+    const std::map<std::string, std::string> &parameters) {
     method = "GET";
     path = request_uri;
     if (!parameters.empty()) {
@@ -166,6 +168,47 @@ std::string HttpRequest::to_string() const {
     }
 
     return request_stream.str();
+}
+
+void HttpRequest::create_delete(
+    const std::string &request_uri,
+    const std::map<std::string, std::string> &parameters) {
+    method = "DELETE";
+    path = request_uri;
+    if (!parameters.empty()) {
+        path += "?";
+        int size = parameters.size();
+
+        for (const auto [name, value] : parameters) {
+            std::string processed_name;
+            std::string processed_value;
+
+            if (name.find(" ") != std::string::npos ||
+                name.find("+") != std::string::npos) {
+                processed_name = percent_encoding(name);
+                path += processed_name;
+            } else {
+                path += name;
+            }
+
+            path += "=";
+
+            if (value.find(" ") != std::string::npos ||
+                value.find("+") != std::string::npos) {
+                processed_value = percent_encoding(value);
+                path += processed_value;
+            } else {
+                path += value;
+            }
+
+            if (size > 1) {
+                path += "&";
+                size -= 1;
+            }
+        }
+    }
+    version = "HTTP/1.1";
+    set_header("Host", "localhost");
 }
 
 HttpResponse HttpResponse::switching_protocol() {

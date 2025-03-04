@@ -3,6 +3,7 @@
 //
 
 #pragma once
+#include "string_utils.hpp"
 #include <algorithm>
 #include <map>
 #include <string>
@@ -29,8 +30,8 @@ class HttpRequest {
     std::string get_header(const std::string &name) const;
     void set_header(const std::string &key, const std::string &value);
 
-    void create_get(std::string request_uri,
-                    std::map<std::string, std::string> parameters = {});
+    void create_get(const std::string &request_uri,
+                    const std::map<std::string, std::string> &parameters = {});
 
     std::string to_string() const;
 
@@ -63,6 +64,17 @@ class HttpRequest {
     template <typename T>
     void create_put(const std::string &request_uri, const T &data,
                     const std::string &content_type = "application/json");
+
+    void create_delete(const std::string &request_uri) {
+        method = "DELETE";
+        path = percent_encoding(request_uri, "spaces");
+        version = "HTTP/1.1";
+        set_header("host", "localhost");
+        set_header("content-length", "0");
+    };
+
+    void create_delete(const std::string &request_uri,
+                       const std::map<std::string, std::string> &params);
 };
 
 template <typename T>
