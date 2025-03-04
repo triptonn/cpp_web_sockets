@@ -88,7 +88,7 @@ void HttpRequest::create_get(std::string request_uri,
                 path += "&";
                 size -= 1;
             } else {
-                continue; 
+                continue;
             }
         }
     }
@@ -96,8 +96,9 @@ void HttpRequest::create_get(std::string request_uri,
     set_header("Host", "localhost");
 }
 
-void HttpRequest::create_post(const std::string& request_uri,
-                              const std::map<std::string, std::string>& form_data) {
+void HttpRequest::create_post(
+    const std::string &request_uri,
+    const std::map<std::string, std::string> &form_data) {
     method = "POST";
     path = request_uri;
     version = "HTTP/1.1";
@@ -105,13 +106,39 @@ void HttpRequest::create_post(const std::string& request_uri,
     std::string content;
     bool first = true;
 
-    for (const auto& [key, value] : form_data) {
+    for (const auto &[key, value] : form_data) {
         if (!first) {
             content += "&";
         } else {
             first = false;
         }
 
+        if (key != "email") {
+            content += percent_encoding(key) + "=" + percent_encoding(value);
+        } else {
+            content += percent_encoding(key) + "=" + value;
+        }
+    }
+    set_header("content-type", "application/x-www-form-urlencoded");
+    set_header("content-length", std::to_string(content.length()));
+    body = content;
+}
+
+void HttpRequest::create_put(
+    const std::string &request_uri,
+    const std::map<std::string, std::string> &form_data) {
+    method = "PUT";
+    path = request_uri;
+    version = "HTTP/1.1";
+
+    std::string content;
+    bool first = true;
+    for (const auto &[key, value] : form_data) {
+        if (!first) {
+            content += "&";
+        } else {
+            first = false;
+        }
         if (key != "email") {
             content += percent_encoding(key) + "=" + percent_encoding(value);
         } else {

@@ -44,6 +44,10 @@ std::string percent_encoding(std::string string_value) {
             processed_string += "%5E";
         } else if (c == '&') {
             processed_string += "%26";
+        } else if (c == '<') {
+            processed_string += "%3C";
+        } else if (c == '>') {
+            processed_string += "%3E";
         } else if (c == '*') {
             processed_string += "%2A";
         } else if (c == '(') {

@@ -456,6 +456,62 @@ TEST_CASE("HTTP Client Request - DELETE Method", "[http]") {
         REQUIRE(request.has_header("if-match"));
         REQUIRE(request.get_header("if-match") == "\"abc123\"");
     }
+
+    SECTION("DELETE request with special characters in path") {
+        HttpRequest request;
+        std::map<std::string, std::string> params = {
+            {"reason", "duplicate content"}, {"tag", "temp & draft"}};
+
+        REQUIRE_NOTHROW(
+            request.create_delete("/api/files/report with spaces.pdf"));
+
+        REQUIRE(request.method == "DELETE");
+        REQUIRE(request.path == "/api/files/report%20with%20spaces.pdf");
+    }
+
+    SECTION("DELETE request with special characters in query parameters") {
+        HttpRequest request;
+        std::map<std::string, std::string> params = {
+            {"reason", "duplicate content"}, {"tag", "temp & draft"}};
+
+        REQUIRE_NOTHROW(request.create_delete("/api/posts/101", params));
+
+        REQUIRE(request.method == "DELETE");
+        REQUIRE(request.path.find("/api/posts/101?") == 0);
+        REQUIRE(request.path.find("reason=duplicate%20content") !=
+                std::string::npos);
+        REQUIRE(request.path.find("tag=temp%20%26%20draft") !=
+                std::string::npos);
+    }
+
+    SECTION("DELETE request with Accept header for response format") {
+        HttpRequest request;
+
+        REQUIRE_NOTHROW(request.create_delete("/api/comments/202"));
+        request.set_header("Accept", "application/json");
+
+        REQUIRE(request.method == "DELETE");
+        REQUIRE(request.path == "/api/comments/202");
+        REQUIRE(request.has_header("accept"));
+        REQUIRE(request.get_header("Accept") == "application/json");
+    }
+
+    SECTION("DELETE request with multiple headers") {
+        HttpRequest request;
+
+        REQUIRE_NOTHROW(request.create_delete("/api/subscription/303"));
+        request.set_header("Authorization", "Bearer token123");
+        request.set_header("X-Request-ID", "req-123-456");
+        request.set_header("User-Agent", "MyClient/1.0");
+
+        REQUIRE(request.method == "DELETE");
+        REQUIRE(request.path == "/api/subscription/303");
+        REQUIRE(request.has_header("authorization"));
+        REQUIRE(request.has_header("x-request-id"));
+        REQUIRE(request.has_header("user-agent"));
+        REQUIRE(request.get_header("X-Request-ID") == "req-123-456");
+        REQUIRE(request.get_header("User-Agent") == "MyClient/1.0");
+    }
 }
 
 /////////////////////////////////

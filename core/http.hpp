@@ -5,21 +5,20 @@
 #pragma once
 #include <algorithm>
 #include <map>
-#include <type_traits>
 #include <string>
+#include <type_traits>
 
 /////////////////////////////////
 // HTTP Request
 /////////////////////////////////
 
 class HttpRequest {
-public:
+  public:
     std::string method;
     std::string path;
     std::string version;
     std::map<std::string, std::string> headers;
     std::string body;
-
 
     // Default constructor just creating an empty HttpRequest shell
     HttpRequest() {}
@@ -35,11 +34,7 @@ public:
 
     std::string to_string() const;
 
-    void create_put(std::string& request_uri,
-                    const std::map<std::string, std::string> parameters = {},
-                    std::string content_type = "application/x-www-form-urlencoded");
-
-    void create_post(const std::string& request_uri) {
+    void create_post(const std::string &request_uri) {
         method = "POST";
         path = request_uri;
         version = "HTTP/1.1";
@@ -47,18 +42,32 @@ public:
         set_header("content-length", "0");
     };
 
-    void create_post(const std::string& request_uri,
-                     const std::map<std::string, std::string>& form_data);
+    void create_post(const std::string &request_uri,
+                     const std::map<std::string, std::string> &form_data);
 
-    template<typename T>
-    void create_post(const std::string& request_uri,
-                    const T& data,
-                    const std::string& content_type = "application/json");
+    template <typename T>
+    void create_post(const std::string &request_uri, const T &data,
+                     const std::string &content_type = "application/json");
+
+    void create_put(const std::string &request_uri) {
+        method = "PUT";
+        path = request_uri;
+        version = "HTTP/1.1";
+        set_header("host", "localhost");
+        set_header("content-length", "0");
+    };
+
+    void create_put(const std::string &request_uri,
+                    const std::map<std::string, std::string> &form_data);
+
+    template <typename T>
+    void create_put(const std::string &request_uri, const T &data,
+                    const std::string &content_type = "application/json");
 };
 
-template<typename T>
-void HttpRequest::create_post(const std::string& request_uri, const T& data, 
-                              const std::string& content_type) {
+template <typename T>
+void HttpRequest::create_post(const std::string &request_uri, const T &data,
+                              const std::string &content_type) {
     method = "POST";
     path = request_uri;
     version = "HTTP/1.1";
@@ -68,7 +77,30 @@ void HttpRequest::create_post(const std::string& request_uri, const T& data,
     if constexpr (std::is_same_v<T, std::string>) {
         content = data;
     } else {
-        static_assert(std::is_same_v<T, std::string>, "Unsupported data type for POST request");
+        static_assert(std::is_same_v<T, std::string>,
+                      "Unsupported data type for POST request");
+    }
+
+    set_header("content-type", content_type);
+    set_header("content-length", std::to_string(content.length()));
+
+    body = content;
+}
+
+template <typename T>
+void HttpRequest::create_put(const std::string &request_uri, const T &data,
+                             const std::string &content_type) {
+    method = "PUT";
+    path = request_uri;
+    version = "HTTP/1.1";
+
+    std::string content;
+
+    if constexpr (std::is_same_v<T, std::string>) {
+        content = data;
+    } else {
+        static_assert(std::is_same_v<T, std::string>,
+                      "Unsupported data type for PUT request");
     }
 
     set_header("content-type", content_type);
@@ -105,7 +137,7 @@ inline void HttpRequest::set_header(const std::string &key,
 /////////////////////////////////
 
 class HttpResponse {
-public:
+  public:
     int status_code;
     std::string status_text;
     std::string version;
