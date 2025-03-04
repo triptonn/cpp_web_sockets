@@ -5,6 +5,7 @@
 #pragma once
 #include <algorithm>
 #include <map>
+#include <type_traits>
 #include <string>
 
 /////////////////////////////////
@@ -12,7 +13,7 @@
 /////////////////////////////////
 
 class HttpRequest {
-  public:
+public:
     std::string method;
     std::string path;
     std::string version;
@@ -29,11 +30,42 @@ class HttpRequest {
 
     void create_get(std::string request_uri,
                     std::map<std::string, std::string> parameters = {});
-    void create_post(std::string request_uri,
-                     std::map<std::string, std::string> parameters = {});
 
     std::string to_string() const;
+
+    void create_put(std::string& request_uri,
+                    const std::map<std::string, std::string> parameters = {},
+                    std::string content_type = "application/x-www-form-urlencoded");
+
+    template<typename T>
+    void create_post(const std::string& request_uri,
+                    const T& data,
+                    const std::string& content_type = "application/json");
+
+    void create_post(const std::string& request_uri,
+                     const std::map<std::string, std::string>& form_data);
 };
+
+template<typename T>
+void HttpRequest::create_post(const std::string& request_uri, const T& data, 
+                              const std::string& content_type) {
+    method = "POST";
+    path = request_uri;
+    version = "HTTP/1.1";
+
+    std::string content;
+
+    if constexpr (std::is_same_v<T, std::string>) {
+        content = data;
+    } else {
+        static_assert(std::is_same_v<T, std::string>, "Unsupported data type for POST request");
+    }
+
+    set_header("content-type", content_type);
+    set_header("content-length", std::to_string(content.length()));
+
+    body = content;
+}
 
 inline bool HttpRequest::has_header(const std::string &name) const {
     std::string lower_name = name;
@@ -63,7 +95,7 @@ inline void HttpRequest::set_header(const std::string &key,
 /////////////////////////////////
 
 class HttpResponse {
-  public:
+public:
     int status_code;
     std::string status_text;
     std::string version;

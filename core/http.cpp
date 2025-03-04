@@ -3,8 +3,8 @@
 //
 
 #include <algorithm>
-#include <iostream>
 #include <sstream>
+#include <string>
 
 #include "http.hpp"
 #include "string_utils.hpp"
@@ -88,7 +88,7 @@ void HttpRequest::create_get(std::string request_uri,
                 path += "&";
                 size -= 1;
             } else {
-                continue;
+                continue; 
             }
         }
     }
@@ -96,16 +96,25 @@ void HttpRequest::create_get(std::string request_uri,
     set_header("Host", "localhost");
 }
 
-void HttpRequest::create_post(std::string request_uri,
-                              std::map<std::string, std::string> data) {
+void HttpRequest::create_post(const std::string& request_uri, const std::map<std::string, std::string>& form_data) {
     method = "POST";
     path = request_uri;
-    if (!data.empty()) {
-        for (const auto [key, value] : data) {
-            std::string processed_key;
-            std::string processed_value;
-        };
+    version = "HTTP/1.1";
+
+    std::string content;
+    bool first = true;
+
+    for (const auto& [key, value] : form_data) {
+        if (!first) {
+            content += "&";
+        }
+        content += handle_special_chars_for_path(key) + "=" + handle_special_chars_for_path(value);
+        first = false;
     }
+
+    set_header("content-type", "application/x-www-form-urlencoded");
+    set_header("content-length", std::to_string(content.length()));
+    body = content;
 }
 
 std::string HttpRequest::to_string() const {
