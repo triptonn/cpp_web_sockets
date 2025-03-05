@@ -595,3 +595,56 @@ TEST_CASE("HTTP Response - Edge Cases", "[http]") {
                 "Value with spaces and symbols: !Q#$%");
     }
 }
+
+/* TEST_CASE("HTTP Response - Enhanced Features", "[http]") {
+    SECTION("JSON Response") {
+        std::string json = R"({"name":"John","age":30})";
+        HttpResponse response = HttpResponse::json_response(json);
+
+        REQUIRE(response.status_code == 200);
+        REQUIRE(response.get_header("Content-Type") == "application/json");
+        REQUIRE(response.body == json);
+    }
+
+    SECTION("HTML Response") {
+        std::string html = "<html><body>Hello</body></html>";
+        HttpResponse response = HttpResponse::html_response(html);
+
+        REQUIRE(response.status_code == 200);
+        REQUIRE(response.get_header("Content-Type") == "text/html");
+        REQUIRE(response.body == html);
+    }
+
+    SECTION("Binary Response") {
+        std::vector<uint8_t> binary_data = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A,
+0x1A, 0x0A}; // PNG header HttpResponse response;
+        response.set_binary_body(binary_data, "image/png");
+
+        REQUIRE(response.is_binary_response());
+        REQUIRE(response.get_header("Content-Type") == "image/png");
+        REQUIRE(response.get_header("Content-Length") == "8");
+        REQUIRE(response.get_binary_body() == binary_data);
+    }
+
+    SECTION("Streaming Response") {
+        HttpResponse response;
+        std::string large_content = "Large content that would be streamed";
+
+        response.set_streaming(
+            [&large_content](std::ostream& os) {
+                os << large_content;
+            },
+            large_content.length(),
+            "text/plain"
+        );
+
+        REQUIRE(response.is_streaming_response());
+        REQUIRE(response.get_header("Content-Type") == "text/plain");
+        REQUIRE(response.get_header("Content-Length") ==
+std::to_string(large_content.length()));
+
+        std::ostringstream test_stream;
+        response.write_to_stream(test_stream);
+        REQUIRE(test_stream.str() == large_content);
+    }
+} */
