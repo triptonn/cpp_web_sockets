@@ -5,7 +5,10 @@
 #pragma once
 #include "string_utils.hpp"
 #include <algorithm>
+#include <cstdint>
+#include <iostream>
 #include <map>
+#include <vector>
 #include <string>
 #include <type_traits>
 
@@ -156,15 +159,22 @@ class HttpResponse {
     std::map<std::string, std::string> headers;
     std::string body;
 
-    HttpResponse(int code = 200, std::string text = "OK",
-                 std::string vers = "HTTP/1.1") {
+    HttpResponse(
+        int code = 200,
+        std::string text = "OK",
+        std::string vers = "HTTP/1.1") {
         status_code = code;
         status_text = text;
         version = vers;
     }
 
-    static HttpResponse switching_protocol();
+    // Status code 200
     static HttpResponse ok(const std::string &body = "");
+    static HttpResponse json_response(const std::string &json = "");
+    static HttpResponse html_response(const std::string &html = "");
+    static HttpResponse binary_response(const std::vector<uint8_t> &binary);
+
+    static HttpResponse switching_protocol();
     static HttpResponse not_found(const std::string &resource = "");
     static HttpResponse server_error(const std::string &message = "");
     static HttpResponse bad_request(const std::string &message = "");
@@ -173,12 +183,35 @@ class HttpResponse {
     void set_header(const std::string &key, const std::string &value);
     std::string get_header(const std::string &name) const;
 
-    void set_body(const std::string &content,
+    HttpResponse& set_body(const std::string &content,
                   const std::string &content_type = "text/plain") {
         body = content;
         set_header("Content-Type", content_type);
         set_header("Content-Length", std::to_string(content.length()));
+        return *this;
     }
+
+    bool is_binary_response() {
+        if (get_header("content-type") == "image/png") {
+            return true;
+        }
+        return false;
+    };
+
+    HttpResponse& set_binary_body(const std::vector<uint8_t> &binary_content, const std::string &content_type = "image/png") {
+        std::string binary_body;
+        binary_body.assign(std::begin(binary_content), std::end(binary_content));
+        set_header("Content-Type", content_type);
+        set_header("Content-Length", std::to_string(binary_body.length()));
+        return *this;
+    }
+
+    std::vector<uint8_t> get_binary_body() {
+        // TODO: Here we go on to implement string --> binary conversion
+        std::vector<uint8_t> vec(std::begin(body), std::end(body));
+        return vec;
+    }; 
+
     std::string to_string() const;
 };
 

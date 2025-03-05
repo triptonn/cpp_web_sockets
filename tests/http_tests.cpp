@@ -90,11 +90,15 @@ TEST_CASE("HTTP Request Parsing - Edge Cases", "[http]") {
 TEST_CASE("HTTP Client Request Creation - GET Method", "[http]") {
     SECTION("Create basic GET request") {
         HttpRequest request;
-        REQUIRE_NOTHROW(request.create_get("/index.html"));
-
         std::string expected_request = "GET /index.html HTTP/1.1\r\n"
                                        "Host: localhost\r\n"
                                        "\r\n";
+        REQUIRE_NOTHROW(request.create_get("/index.html"));
+
+        REQUIRE(request.method == "GET");
+        REQUIRE(request.path == "/index.html");
+        REQUIRE(request.version == "HTTP/1.1");
+        REQUIRE(request.get_header("host") == "localhost");
 
         REQUIRE(request.to_string() == expected_request);
     }
@@ -596,7 +600,7 @@ TEST_CASE("HTTP Response - Edge Cases", "[http]") {
     }
 }
 
-/* TEST_CASE("HTTP Response - Enhanced Features", "[http]") {
+TEST_CASE("HTTP Response - Enhanced Features", "[http]") {
     SECTION("JSON Response") {
         std::string json = R"({"name":"John","age":30})";
         HttpResponse response = HttpResponse::json_response(json);
@@ -616,8 +620,8 @@ TEST_CASE("HTTP Response - Edge Cases", "[http]") {
     }
 
     SECTION("Binary Response") {
-        std::vector<uint8_t> binary_data = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A,
-0x1A, 0x0A}; // PNG header HttpResponse response;
+        std::vector<uint8_t> binary_data = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}; // PNG header HttpResponse response;
+        HttpResponse response = HttpResponse::binary_response(binary_data);
         response.set_binary_body(binary_data, "image/png");
 
         REQUIRE(response.is_binary_response());
@@ -626,7 +630,7 @@ TEST_CASE("HTTP Response - Edge Cases", "[http]") {
         REQUIRE(response.get_binary_body() == binary_data);
     }
 
-    SECTION("Streaming Response") {
+    /* SECTION("Streaming Response") {
         HttpResponse response;
         std::string large_content = "Large content that would be streamed";
 
@@ -646,5 +650,5 @@ std::to_string(large_content.length()));
         std::ostringstream test_stream;
         response.write_to_stream(test_stream);
         REQUIRE(test_stream.str() == large_content);
-    }
-} */
+    } */
+}

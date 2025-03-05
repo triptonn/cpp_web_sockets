@@ -229,6 +229,28 @@ HttpResponse HttpResponse::ok(const std::string &body) {
     return response;
 }
 
+HttpResponse HttpResponse::json_response(const std::string &json_body) {
+    HttpResponse response(200, "OK");
+    response.set_body(json_body);
+    response.set_header("Content-Type", "application/json");
+    return response;
+}
+
+HttpResponse HttpResponse::html_response(const std::string &html_body) {
+    HttpResponse response(200, "OK");
+    response.set_body(html_body);
+    response.set_header("Content-Type", "text/html");
+    return response;
+}
+
+HttpResponse HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
+    HttpResponse response(200, "OK");
+    response.set_binary_body(binary_body);
+    response.set_header("Content-Type", "image/png");
+    response.set_header("Content-Length", std::to_string(sizeof(response.get_header("Content-Type"))));
+    return response;
+}
+
 HttpResponse HttpResponse::not_found(const std::string &resource) {
     HttpResponse response(404, "Not Found");
     std::string body =
