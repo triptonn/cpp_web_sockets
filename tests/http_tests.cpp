@@ -620,7 +620,9 @@ TEST_CASE("HTTP Response - Enhanced Features", "[http]") {
     }
 
     SECTION("Binary Response") {
-        std::vector<uint8_t> binary_data = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}; // PNG header HttpResponse response;
+        std::vector<uint8_t> binary_data = {
+            0x89, 0x50, 0x4E, 0x47,
+            0x0D, 0x0A, 0x1A, 0x0A};  // PNG header HttpResponse response;
         HttpResponse response = HttpResponse::binary_response(binary_data);
         response.set_binary_body(binary_data, "image/png");
 
@@ -630,25 +632,21 @@ TEST_CASE("HTTP Response - Enhanced Features", "[http]") {
         REQUIRE(response.get_binary_body() == binary_data);
     }
 
-    /* SECTION("Streaming Response") {
+    SECTION("Streaming Response") {
         HttpResponse response;
         std::string large_content = "Large content that would be streamed";
 
         response.set_streaming(
-            [&large_content](std::ostream& os) {
-                os << large_content;
-            },
-            large_content.length(),
-            "text/plain"
-        );
+            [&large_content](std::ostream &os) { os << large_content; },
+            large_content.length(), "text/plain");
 
         REQUIRE(response.is_streaming_response());
         REQUIRE(response.get_header("Content-Type") == "text/plain");
         REQUIRE(response.get_header("Content-Length") ==
-std::to_string(large_content.length()));
+                std::to_string(large_content.length()));
 
         std::ostringstream test_stream;
         response.write_to_stream(test_stream);
         REQUIRE(test_stream.str() == large_content);
-    } */
+    }
 }

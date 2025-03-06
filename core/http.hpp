@@ -6,11 +6,10 @@
 #include "string_utils.hpp"
 #include <algorithm>
 #include <cstdint>
-#include <iostream>
 #include <map>
-#include <vector>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 /////////////////////////////////
 // HTTP Request
@@ -158,11 +157,10 @@ class HttpResponse {
     std::string version;
     std::map<std::string, std::string> headers;
     std::string body;
+    bool is_binary = false;
 
-    HttpResponse(
-        int code = 200,
-        std::string text = "OK",
-        std::string vers = "HTTP/1.1") {
+    HttpResponse(int code = 200, std::string text = "OK",
+                 std::string vers = "HTTP/1.1") {
         status_code = code;
         status_text = text;
         version = vers;
@@ -183,34 +181,29 @@ class HttpResponse {
     void set_header(const std::string &key, const std::string &value);
     std::string get_header(const std::string &name) const;
 
-    HttpResponse& set_body(const std::string &content,
-                  const std::string &content_type = "text/plain") {
+    HttpResponse &set_body(const std::string &content,
+                           const std::string &content_type = "text/plain") {
         body = content;
         set_header("Content-Type", content_type);
         set_header("Content-Length", std::to_string(content.length()));
         return *this;
     }
 
-    bool is_binary_response() {
-        if (get_header("content-type") == "image/png") {
-            return true;
-        }
-        return false;
-    };
+    bool is_binary_response() { return is_binary; };
 
-    HttpResponse& set_binary_body(const std::vector<uint8_t> &binary_content, const std::string &content_type = "image/png") {
-        std::string binary_body;
-        binary_body.assign(std::begin(binary_content), std::end(binary_content));
+    HttpResponse &set_binary_body(
+        const std::vector<uint8_t> &binary_content,
+        const std::string &content_type = "application/octet-stream") {
+        body = std::string(binary_content.begin(), binary_content.end());
+        is_binary = true;
         set_header("Content-Type", content_type);
-        set_header("Content-Length", std::to_string(binary_body.length()));
+        set_header("Content-Length", std::to_string(body.length()));
         return *this;
     }
 
     std::vector<uint8_t> get_binary_body() {
-        // TODO: Here we go on to implement string --> binary conversion
-        std::vector<uint8_t> vec(std::begin(body), std::end(body));
-        return vec;
-    }; 
+        return std::vector<uint8_t>(body.begin(), body.end());
+    }
 
     std::string to_string() const;
 };
