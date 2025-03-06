@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <functional>
 
 #include "http.hpp"
 #include "string_utils.hpp"
@@ -271,6 +272,23 @@ HttpResponse HttpResponse::bad_request(const std::string &message) {
     std::string body = "Bad request: '" + message;
     response.set_body(body, "text/html");
     return response;
+}
+
+void HttpResponse::set_streaming(
+    std::function<void(std::ostream&)> stream_callback,
+    size_t content_length,
+    const std::string &content_type
+) {
+    this->stream_callback = stream_callback;
+    this->is_streaming = true;
+    set_header("Content-Type", content_type);
+    set_header("Content-Length", std::to_string(content_length));
+}
+
+void HttpResponse::write_to_stream(std::ostream &os) const {
+    if (is_streaming && stream_callback) {
+        stream_callback(os);
+    }
 }
 
 std::string HttpResponse::to_string() const {

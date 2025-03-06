@@ -5,7 +5,9 @@
 #pragma once
 #include "string_utils.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -146,6 +148,7 @@ inline void HttpRequest::set_header(const std::string &key,
     headers[lower_key] = value;
 }
 
+
 /////////////////////////////////
 // HTTP Response
 /////////////////////////////////
@@ -157,7 +160,6 @@ class HttpResponse {
     std::string version;
     std::map<std::string, std::string> headers;
     std::string body;
-    bool is_binary = false;
 
     HttpResponse(int code = 200, std::string text = "OK",
                  std::string vers = "HTTP/1.1") {
@@ -206,6 +208,20 @@ class HttpResponse {
     }
 
     std::string to_string() const;
+
+    bool is_streaming_response() { return is_streaming; };
+    void set_streaming(
+        std::function<void(std::ostream&)> stream_callback,
+        size_t content_length,
+        const std::string &content_type = "text/plain"
+    );
+    void write_to_stream(std::ostream &os) const;    
+
+private:
+    bool is_binary = false;
+    bool is_streaming = false;
+
+    std::function<void(std::ostream&)> stream_callback;
 };
 
 inline bool HttpResponse::has_header(const std::string &name) const {
@@ -231,3 +247,28 @@ inline std::string HttpResponse::get_header(const std::string &name) const {
     auto it = headers.find(lower_name);
     return (it != headers.end()) ? it->second : "";
 }
+
+/////////////////////////////////
+// HTTP Client 
+/////////////////////////////////
+
+class HttpClient {
+public:
+    HttpClient(std::string host, short int host_port) {
+        if (host == "localhost") {
+            ip4_array[0] = 127;
+            ip4_array[1] = 0;
+            ip4_array[2] = 0;
+            ip4_array[3] = 1;
+        }
+        port = host_port;
+    }
+
+    void connect();
+
+    HttpResponse send_request(HttpRequest request);
+
+private:
+    std::array<char, 4> ip4_array;
+    short int port;
+};
