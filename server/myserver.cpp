@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include "../core/http.hpp"
 #include "../core/logger.hpp"
 
 std::vector<int> client_fds;
@@ -107,6 +108,29 @@ int main() {
                 } else {
                     buffer[bytes_received] = '\0';
                     std::cout << "Received: " << buffer << std::endl;
+
+                    HttpRequest request = HttpRequest::parse(buffer);
+
+                    if (request.path.compare("/test") == 0) {
+                        HttpResponse response;
+                        std::string response_str = response.ok().to_string();
+                        std::cout << "response_str: " << response_str
+                                  << std::endl;
+                        int sending_status =
+                            send(client_fd, response_str.c_str(),
+                                 response_str.length(), 0);
+                        if (sending_status == -1) {
+                            std::cerr << "Sending response failed"
+                                      << strerror(errno) << std::endl;
+                        } else {
+                            std::cout << "Sent: " << sending_status << " bytes"
+                                      << std::endl;
+                        }
+                    }
+
+                    std::cout << "Parsed response: " << request.to_string()
+                              << std::endl;
+
                     std::string client = std::to_string(client_fd);
 
                     std::string log_entry = "Client " + client + ": " + buffer;

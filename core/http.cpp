@@ -3,10 +3,15 @@
 //
 
 #include <algorithm>
+#include <bits/types/struct_timeval.h>
+#include <cstring>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <functional>
+
+#include <sys/select.h>
+#include <sys/socket.h>
 
 #include "http.hpp"
 #include "string_utils.hpp"
@@ -224,6 +229,7 @@ HttpResponse HttpResponse::switching_protocol() {
 
 HttpResponse HttpResponse::ok(const std::string &body) {
     HttpResponse response(200, "OK");
+    response.set_header("Content-Type", "text/plain");
     if (!body.empty()) {
         response.set_body(body);
     }
@@ -244,11 +250,14 @@ HttpResponse HttpResponse::html_response(const std::string &html_body) {
     return response;
 }
 
-HttpResponse HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
+HttpResponse
+HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
     HttpResponse response(200, "OK");
     response.set_binary_body(binary_body);
     response.set_header("Content-Type", "image/png");
-    response.set_header("Content-Length", std::to_string(sizeof(response.get_header("Content-Type"))));
+    response.set_header(
+        "Content-Length",
+        std::to_string(sizeof(response.get_header("Content-Type"))));
     return response;
 }
 
@@ -275,10 +284,8 @@ HttpResponse HttpResponse::bad_request(const std::string &message) {
 }
 
 void HttpResponse::set_streaming(
-    std::function<void(std::ostream&)> stream_callback,
-    size_t content_length,
-    const std::string &content_type
-) {
+    std::function<void(std::ostream &)> stream_callback, size_t content_length,
+    const std::string &content_type) {
     this->stream_callback = stream_callback;
     this->is_streaming = true;
     set_header("Content-Type", content_type);
@@ -293,7 +300,7 @@ void HttpResponse::write_to_stream(std::ostream &os) const {
 
 std::string HttpResponse::to_string() const {
     std::ostringstream response_stream;
-    response_stream << version << " " << status_code << " " << status_text
+    response_stream << version << " " << status_code << " " << reason_phrase
                     << "\r\n";
 
     auto headers_copy = headers;
@@ -313,4 +320,99 @@ std::string HttpResponse::to_string() const {
     }
 
     return response_stream.str();
+}
+
+HttpResponse HttpResponse::parse(const std::string &raw_response) {
+    HttpResponse response;
+    std::istringstream stream(raw_response);
+    std::string line;
+
+    if (std::getline(stream, line)) {
+        std::istringstream response_line(line);
+        response_line >> response.version >> response.status_code >>
+            response.reason_phrase;
+    }
+
+    while (std::getline(stream, line) && !line.empty() && line != "\r") {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        if (line.empty()) {
+            continue;
+        }
+
+        size_t colon_pos = line.find(':');
+        if (colon_pos != std::string::npos) {
+            std::string key = line.substr(0, colon_pos);
+            std::string value = line.substr(colon_pos + 1);
+
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+
+            response.headers[key] = value;
+        }
+    }
+
+    std::string body;
+    while (std::getline(stream, line)) {
+        body += line + "\n";
+    }
+
+    if (!body.empty()) {
+        response.body = body;
+    }
+    return response;
+}
+
+HttpResponse HttpClient::send_request(HttpRequest request) {
+    if (!is_connected) {
+        throw std::runtime_error("Not connected to server");
+    }
+
+    std::string request_str = request.to_string();
+    if (send(client_fd, request_str.c_str(), request_str.length(), 0) < 0) {
+        throw std::runtime_error("Failed to send request");
+    }
+
+    std::string response_data;
+    char buffer[4096];
+    fd_set read_fds;
+    struct timeval timeout;
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+
+    while (true) {
+        FD_ZERO(&read_fds);
+        FD_SET(client_fd, &read_fds);
+
+        int select_result =
+            select(client_fd + 1, &read_fds, nullptr, nullptr, &timeout);
+
+        if (select_result < 0) {
+            throw std::runtime_error("Select error");
+        } else if (select_result == 0) {
+            throw std::runtime_error("Timeout waiting for response");
+        }
+
+        int bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+        if (bytes_received < 0) {
+            throw std::runtime_error("Error receiving response");
+        }
+
+        if (bytes_received == 0) {
+            break;
+        }
+
+        buffer[bytes_received] = '\0';
+        response_data += buffer;
+
+        if (response_data.find("\r\n\r\n") != std::string::npos) {
+            break;
+        }
+    }
+    return HttpResponse::parse(response_data);
 }

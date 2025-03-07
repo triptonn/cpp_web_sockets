@@ -523,12 +523,12 @@ TEST_CASE("HTTP Client Request - DELETE Method", "[http]") {
 TEST_CASE("HTTP Response - Basic Construction", "[http]") {
     HttpResponse response;
     REQUIRE(response.status_code == 200);
-    REQUIRE(response.status_text == "OK");
+    REQUIRE(response.reason_phrase == "OK");
     REQUIRE(response.version == "HTTP/1.1");
 
     HttpResponse custom_response(404, "Not Found");
     REQUIRE(custom_response.status_code == 404);
-    REQUIRE(custom_response.status_text == "Not Found");
+    REQUIRE(custom_response.reason_phrase == "Not Found");
 }
 
 TEST_CASE("HTTP Response - Headers Management", "[http]") {
@@ -589,7 +589,7 @@ TEST_CASE("HTTP Response - Edge Cases", "[http]") {
     SECTION("Non-standard status code") {
         HttpResponse response(418, "I'm a teapot");
         REQUIRE(response.status_code == 418);
-        REQUIRE(response.status_text == "I'm a teapot");
+        REQUIRE(response.reason_phrase == "I'm a teapot");
     }
 
     SECTION("Headers with special characters") {
@@ -650,3 +650,102 @@ TEST_CASE("HTTP Response - Enhanced Features", "[http]") {
         REQUIRE(test_stream.str() == large_content);
     }
 }
+
+TEST_CASE("HttpClient - Constructor and Hostname Resolution", "[client]") {
+    SECTION("Valid hostname resolution - localhost") {
+        REQUIRE_NOTHROW(HttpClient("localhost", 8080));
+    }
+
+    SECTION("Valid hostname resolution - actual domain") {
+        REQUIRE_NOTHROW(HttpClient("google.com", 80));
+    }
+
+    SECTION("Invalid hostname") {
+        REQUIRE_THROWS_AS(HttpClient("invalid.nonexistent.domain", 8080),
+                          std::runtime_error);
+    }
+}
+
+TEST_CASE("HttpClient - Connection Management", "[client]") {
+    SECTION("Connect to running server") {
+        HttpClient client("localhost", 8080);
+        REQUIRE(client.connect_to_server() == 0);
+    }
+
+    SECTION("Connection state tracking") {
+        HttpClient client("localhost", 8080);
+        client.connect_to_server();
+        client.disconnect();
+        REQUIRE_NOTHROW(client.connect_to_server());
+    }
+
+    SECTION("Connect to non-existent server") {
+        HttpClient client("localhost", 9999);
+        REQUIRE(client.connect_to_server() == -1);
+    }
+}
+
+TEST_CASE("Client Request-Response Functionality", "[client]") {
+    HttpClient client("localhost", 8080);
+
+    SECTION("Send GET request and receive response") {
+        HttpRequest request;
+        request.create_get("/test");
+
+        REQUIRE_NOTHROW(client.connect_to_server());
+        auto response = client.send_request(request);
+
+        REQUIRE(response.status_code == 200);
+        REQUIRE(response.get_header("content-type") == "text/plain");
+    }
+
+    /* SECTION("POST request with form data") {
+        HttpRequest request;
+        std::map<std::string, std::string> form_data = {{"name", "test"},
+                                                        {"value", "123"}};
+        request.create_post("/api/data", form_data);
+
+        REQUIRE_NOTHROW(client.connect_to_server());
+        auto response = client.send_request(request);
+
+        REQUIRE(response.status_code == 200);
+    }
+
+    SECTION("Request to non-existent endpoint") {
+        HttpRequest request;
+        request.create_get("/nonexistent");
+
+        REQUIRE_NOTHROW(client.connect_to_server());
+        auto response = client.send_request(request);
+
+        REQUIRE(response.status_code == 404);
+    } */
+}
+
+/* TEST_CASE("HttpClient - Resource Management", "[client]") {
+    SECTION("Proper cleanup on destruction") {
+        {
+            HttpClient client("localhost", 8080);
+            client.connect_to_server();
+        }
+        REQUIRE_NOTHROW(HttpClient("localhost", 8080));
+    }
+}
+
+TEST_CASE("HttpClient - Error Handling", "[client]") {
+    SECTION("Send request without connection") {
+        HttpClient client("localhost", 8080);
+        HttpRequest request;
+        request.create_get("/test");
+
+        REQUIRE_THROWS(client.send_request(request));
+    }
+
+    SECTION("Reconnection after server disonnect") {
+        HttpClient client("localhost", 8080);
+        client.connect_to_server();
+        client.disconnect();
+
+        REQUIRE_NOTHROW(client.connect_to_server());
+    }
+} */

@@ -4,21 +4,27 @@
 
 #pragma once
 #include "string_utils.hpp"
-#include <iostream>
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <uchar.h>
-#include <unistd.h>
+
 #include <algorithm>
-#include <array>
 #include <cstdint>
+#include <cstring>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <string>
-#include <type_traits>
 #include <vector>
+
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <type_traits>
+#include <uchar.h>
+#include <unistd.h>
 
 /////////////////////////////////
 // HTTP Request
@@ -155,7 +161,6 @@ inline void HttpRequest::set_header(const std::string &key,
     headers[lower_key] = value;
 }
 
-
 /////////////////////////////////
 // HTTP Response
 /////////////////////////////////
@@ -163,7 +168,7 @@ inline void HttpRequest::set_header(const std::string &key,
 class HttpResponse {
   public:
     int status_code;
-    std::string status_text;
+    std::string reason_phrase;
     std::string version;
     std::map<std::string, std::string> headers;
     std::string body;
@@ -171,7 +176,7 @@ class HttpResponse {
     HttpResponse(int code = 200, std::string text = "OK",
                  std::string vers = "HTTP/1.1") {
         status_code = code;
-        status_text = text;
+        reason_phrase = text;
         version = vers;
     }
 
@@ -185,6 +190,9 @@ class HttpResponse {
     static HttpResponse not_found(const std::string &resource = "");
     static HttpResponse server_error(const std::string &message = "");
     static HttpResponse bad_request(const std::string &message = "");
+
+    // parsing
+    static HttpResponse parse(const std::string &raw_response);
 
     bool has_header(const std::string &name) const;
     void set_header(const std::string &key, const std::string &value);
@@ -217,18 +225,16 @@ class HttpResponse {
     std::string to_string() const;
 
     bool is_streaming_response() { return is_streaming; };
-    void set_streaming(
-        std::function<void(std::ostream&)> stream_callback,
-        size_t content_length,
-        const std::string &content_type = "text/plain"
-    );
-    void write_to_stream(std::ostream &os) const;    
+    void set_streaming(std::function<void(std::ostream &)> stream_callback,
+                       size_t content_length,
+                       const std::string &content_type = "text/plain");
+    void write_to_stream(std::ostream &os) const;
 
-private:
+  private:
     bool is_binary = false;
     bool is_streaming = false;
 
-    std::function<void(std::ostream&)> stream_callback;
+    std::function<void(std::ostream &)> stream_callback;
 };
 
 inline bool HttpResponse::has_header(const std::string &name) const {
@@ -256,34 +262,103 @@ inline std::string HttpResponse::get_header(const std::string &name) const {
 }
 
 /////////////////////////////////
-// HTTP Client 
+// HTTP Client
 /////////////////////////////////
 
 class HttpClient {
-public:
-    HttpClient(std::string host_name, short int host_port) {
-        int client_fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (client_fd < 0) {
-            std::cerr << "Failed to create socket\n";
+  public:
+    HttpClient(std::string host_name, short int host_port)
+        : hostname(host_name), port(host_port) {
+        std::cout << "Creating client \n";
+        if (!resolve_hostname()) {
+            throw std::runtime_error("Failed to resolve hostname: " + hostname);
         }
-
-        ip4 = 
-
-        port = host_port;
-
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     }
 
-    void connect() {
+    signed int connect_to_server() {
+        std::cout << "Hostname: " << addr.sin_addr.s_addr << std::endl;
+        std::cout << "Port: " << addr.sin_port << std::endl;
 
+        if (connect(client_fd, reinterpret_cast<struct sockaddr *>(&addr),
+                    sizeof(addr)) < 0) {
+            std::cerr << "Connect failed\n";
+            close(client_fd);
+            return -1;
+        }
+        is_connected = true;
+
+        std::cout << "Connected to server\n";
+        return 0;
     };
 
     HttpResponse send_request(HttpRequest request);
 
-private:
+    void disconnect() {
+        is_connected = false;
+        std::cout << "Disconnected from server\n";
+    };
+
+    ~HttpClient() { std::cout << "Removing client\n"; };
+
+  private:
+    std::string hostname;
+    std::string port_str;
+
+    bool is_connected = false;
+    int client_fd;
+    struct sockaddr res;
     struct sockaddr_in addr;
-    in_addr_t ip4;
     short int port;
+
+    bool resolve_hostname() {
+        struct addrinfo hints;
+        struct addrinfo *result;
+
+        memset(&hints, 0, sizeof(hints));
+
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags = AI_PASSIVE;
+
+        port_str = std::to_string(port);
+
+        std::cout << "Hostname: " << hostname << std::endl;
+        std::cout << "Port: " << port_str << std::endl;
+
+        int status =
+            getaddrinfo(hostname.c_str(), port_str.c_str(), &hints, &result);
+
+        if (status != 0) {
+            std::cerr << "getaddrinfo error: " << gai_strerror(status)
+                      << std::endl;
+            return false;
+        }
+
+        struct addrinfo *rp;
+        for (rp = result; rp != NULL; rp = rp->ai_next) {
+            client_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+            if (client_fd == -1) {
+                continue;
+            }
+
+            std::cout << "before Memcpy: " << addr.sin_addr.s_addr << ", "
+                      << addr.sin_port << std::endl;
+            if (rp->ai_family == AF_INET) {
+                memcpy(&addr, rp->ai_addr, sizeof(struct sockaddr_in));
+                std::cout << "after Memcpy: " << addr.sin_addr.s_addr << ", "
+                          << addr.sin_port << std::endl;
+                break;
+            }
+        }
+
+        freeaddrinfo(result);
+
+        if (rp == nullptr) {
+            std::cerr << "Could not resolve hostname" << std::endl;
+            return false;
+        }
+
+        return true;
+    }
 };
