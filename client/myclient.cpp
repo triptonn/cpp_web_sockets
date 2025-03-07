@@ -3,7 +3,6 @@
 //
 
 #include <arpa/inet.h>
-#include <cstdint>
 #include <fcntl.h>
 #include <iostream>
 #include <netinet/in.h>
@@ -45,13 +44,6 @@ int main() {
             std::cerr << "Select error\n";
             break;
         }
-
-        // DEBUG: Print out descriptor information
-        /* std::cout << "Select returned. Checking descriptors:\n";
-        std::cout << "STDIN ready: " << FD_ISSET(STDIN_FILENO, &read_fds)
-                  << "\n";
-        std::cout << "Socket ready: " << FD_ISSET(client_fd, &read_fds) << "\n";
-      */
 
         if (FD_ISSET(STDIN_FILENO, &read_fds)) {
             std::string input;

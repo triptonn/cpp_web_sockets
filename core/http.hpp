@@ -4,6 +4,13 @@
 
 #pragma once
 #include "string_utils.hpp"
+#include <iostream>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <uchar.h>
+#include <unistd.h>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -254,21 +261,29 @@ inline std::string HttpResponse::get_header(const std::string &name) const {
 
 class HttpClient {
 public:
-    HttpClient(std::string host, short int host_port) {
-        if (host == "localhost") {
-            ip4_array[0] = 127;
-            ip4_array[1] = 0;
-            ip4_array[2] = 0;
-            ip4_array[3] = 1;
+    HttpClient(std::string host_name, short int host_port) {
+        int client_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (client_fd < 0) {
+            std::cerr << "Failed to create socket\n";
         }
+
+        ip4 = 
+
         port = host_port;
+
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     }
 
-    void connect();
+    void connect() {
+
+    };
 
     HttpResponse send_request(HttpRequest request);
 
 private:
-    std::array<char, 4> ip4_array;
+    struct sockaddr_in addr;
+    in_addr_t ip4;
     short int port;
 };
