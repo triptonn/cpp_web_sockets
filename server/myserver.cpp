@@ -97,7 +97,7 @@ int main() {
              it != client_fds.end();) {
             int client_fd = *it;
             if (FD_ISSET(client_fd, &read_fds)) {
-                char buffer[1024];
+                char buffer[4096];
                 int bytes_received =
                     recv(client_fd, buffer, sizeof(buffer) - 1, 0);
                 if (bytes_received <= 0) {

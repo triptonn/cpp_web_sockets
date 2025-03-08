@@ -3,15 +3,20 @@
 //
 
 #pragma once
+#include "../core/logger.hpp"
 #include "string_utils.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -267,9 +272,12 @@ inline std::string HttpResponse::get_header(const std::string &name) const {
 
 class HttpClient {
   public:
+    Logger client_log = Logger("client.log");
+
     HttpClient(std::string host_name, short int host_port)
         : hostname(host_name), port(host_port) {
         std::cout << "Creating client \n";
+
         if (!resolve_hostname()) {
             throw std::runtime_error("Failed to resolve hostname: " + hostname);
         }
@@ -286,8 +294,7 @@ class HttpClient {
             return -1;
         }
         is_connected = true;
-
-        std::cout << "Connected to server\n";
+        client_log.write("Connected to server: " + hostname + ":" + port_str);
         return 0;
     };
 
@@ -295,10 +302,16 @@ class HttpClient {
 
     void disconnect() {
         is_connected = false;
-        std::cout << "Disconnected from server\n";
+        client_log.write("Disconnected from server");
     };
 
-    ~HttpClient() { std::cout << "Removing client\n"; };
+    ~HttpClient() {
+        if (is_connected) {
+            close(client_fd);
+            is_connected = false;
+        }
+        client_log.write("Removing client");
+    };
 
   private:
     std::string hostname;
@@ -360,5 +373,95 @@ class HttpClient {
         }
 
         return true;
+    }
+};
+
+/////////////////////////////////
+// HTTP Server
+/////////////////////////////////
+
+class HttpServer {
+  private:
+    std::mutex client_mutex;
+    std::atomic<bool> server_running{false};
+
+    std::thread server_thread;
+
+    std::vector<int> client_fds;
+    fd_set read_fds;
+    short int host_port;
+    int max_fd = 100;
+    timeval timeout;
+    int server_fd;
+    int flags;
+
+    struct sockaddr_in addr;
+
+    using RouteHandler = std::function<HttpResponse(const HttpRequest &)>;
+    struct Route {
+        std::string method;
+        std::string path;
+        RouteHandler handler;
+    };
+    std::vector<Route> routes;
+
+    void handle_new_connection();
+    void handle_user_input();
+    int handle_client_data(int client_fd);
+    void main_loop();
+
+    HttpResponse route_request(const HttpRequest &request) {
+        for (const auto route : routes) {
+            if (route.method == request.method && route.path == request.path) {
+                return route.handler(request);
+            }
+        }
+        return HttpResponse::not_found(request.path);
+    }
+
+  public:
+    Logger server_log = Logger("server.log");
+
+    HttpServer(short int port) : host_port(port) {
+        std::cout << "Logger initialized" << std::endl;
+
+        server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        int reuse = 1;
+        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
+                       sizeof(reuse)) < 0) {
+            throw std::runtime_error("Failed to set SO_REUSEADDR");
+        }
+        flags = fcntl(server_fd, F_GETFL);
+        fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
+
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(host_port);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    }
+
+    void start();
+    void stop();
+
+    void get(const std::string &path, RouteHandler handler) {
+        register_route("GET", path, handler);
+    }
+
+    void post(const std::string &path, RouteHandler handler) {
+        register_route("POST", path, handler);
+    }
+
+    void register_route(const std::string &method, const std::string &path,
+                        RouteHandler handler) {
+        routes.push_back({method, path, handler});
+    }
+
+    ~HttpServer() {
+        if (server_running.load()) {
+            stop();
+        }
+        /* if (server_thread.joinable()) {
+            server_thread.join();
+        } */
+        server_log.write("Server shutting down");
     }
 };

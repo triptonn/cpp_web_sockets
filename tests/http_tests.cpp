@@ -2,6 +2,8 @@
 //
 //
 
+#include <chrono>
+#include <memory>
 #define CATCH_CONFIG_MAIN
 #include "../core/http.hpp"
 #include <catch2/catch_session.hpp>
@@ -667,16 +669,28 @@ TEST_CASE("HttpClient - Constructor and Hostname Resolution", "[client]") {
 }
 
 TEST_CASE("HttpClient - Connection Management", "[client]") {
+    std::unique_ptr<HttpServer> server;
+
     SECTION("Connect to running server") {
+        server = std::make_unique<HttpServer>(8080);
+        server->start();
+
         HttpClient client("localhost", 8080);
         REQUIRE(client.connect_to_server() == 0);
+
+        server->stop();
     }
 
     SECTION("Connection state tracking") {
+        server = std::make_unique<HttpServer>(8080);
+        server->start();
+
         HttpClient client("localhost", 8080);
         client.connect_to_server();
         client.disconnect();
         REQUIRE_NOTHROW(client.connect_to_server());
+
+        server->stop();
     }
 
     SECTION("Connect to non-existent server") {
@@ -685,18 +699,130 @@ TEST_CASE("HttpClient - Connection Management", "[client]") {
     }
 }
 
+TEST_CASE("HttpServer - Basic Setup", "[server]") {
+    SECTION("Server initialization with valid port") {
+        REQUIRE_NOTHROW(HttpServer(8080));
+    }
+
+    /* SECTION("Server initialization with invalid port") {
+        REQUIRE_THROWS_AS(HttpServer(80), std::runtime_error);
+    }
+
+    SECTION("Server initialization with already in use port") {
+        HttpServer server1(8081);
+        REQUIRE_THROWS_AS(HttpServer(8081); std::runtime_error);
+    } */
+}
+
+/* TEST_CASE("HttpServer - Request HAndling", "[server]") {
+    HttpServer(8082);
+
+    SECTION("Register GET route handler") {
+        server.get("/test", [](const HttpRequest &req) -> HttpResponse {
+            return HttpResponse::ok("Test response");
+        });
+
+        HttpRequest test_request;
+        test_request.create_get("/test");
+
+        auto response = server.handle_request(test_request);
+        REQUIRE(response.status_code == 200);
+        REQUIRE(response.body == "Test response");
+    }
+
+    SECTION("Register POST route handler") {
+        server.post("/api/data", [](const HttpRequest &req) -> HttpResponse {
+            if (req.has_header("content-type") &&
+                req.get_header("content-type") == "application/json") {
+                return HttpResponse::json_response("{\"status\":\"success\"}");
+            }
+            return HttpResponse::bad_request("Invalid content-type");
+        });
+
+        HttpRequest test_request;
+        test_request.create_post("/api/data");
+        test_request.set_header("Content-Type", "application/json");
+
+        auto response = server.handle_request(test_request);
+        REQUIRE(response.status_code == 200);
+        REQUIRE(response.get_header("content-type") == "application/json");
+    }
+
+    SECTION("Handle non-existent route") {
+        HttpRequest test_request;
+        test_request.create_get("/nonextistent");
+
+        auto response = server.handle_request(test_request);
+        REQUIRE(response.status_code == 404);
+    }
+} */
+
+/* TEST_CASE("HttpServer - Connection Management", "[server]") {
+    HttpServer server(8083);
+
+    SECTION("Accept new connection") {
+        REQUIRE_NOTHROW(server.start());
+        HttpClient client("localhost", 8083);
+        REQUIRE(client.connect_to_server() == 0);
+    }
+
+    SECTION("Handle multiple connections") {
+        REQUIRE_NOTHROW(server.start());
+        std::vector<HttpClient> clients;
+
+        for (int i = 0; i < 3; i++) {
+            clients.emplace_back("localhost", 8083);
+            REQUIRE(clients.back().connect_to_server() == 0);
+        }
+    }
+}
+
+TEST_CASE("HttpServer - Response Streaming", "[server]") {
+    HttpServer server(8084);
+
+    SECTION("Stream large response") {
+        std::string large_data(1014 * 1014, 'X');  // 1MB of data
+
+        server.get(
+            "/stream", [&large_data](const HttpRequest &req) -> HttpResponse {
+                HttpResponse response;
+                response.set_streaming(
+                    [&large_data](std::ostream &os) { os << large_data; },
+                    large_data.length(), "text/plain");
+                return response;
+            });
+
+        HttpClient client("localhost", 8084);
+        client.connect_to_server();
+        HttpRequest request;
+        request.create_get("/stream");
+
+        auto response = client.send_request(request);
+        REQUIRE(response.body.lenth() == large_data.length());
+    }
+} */
+
 TEST_CASE("Client Request-Response Functionality", "[client]") {
-    HttpClient client("localhost", 8080);
+    std::unique_ptr<HttpServer> server = std::make_unique<HttpServer>(8087);
+    server->get("/test", [](const HttpRequest &req) {
+        return HttpResponse::ok("Test response");
+    });
+
+    server->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     SECTION("Send GET request and receive response") {
+        HttpClient client("localhost", 8087);
+        REQUIRE_NOTHROW(client.connect_to_server());
+
         HttpRequest request;
         request.create_get("/test");
-
-        REQUIRE_NOTHROW(client.connect_to_server());
         auto response = client.send_request(request);
 
         REQUIRE(response.status_code == 200);
         REQUIRE(response.get_header("content-type") == "text/plain");
+
+        client.disconnect();
     }
 
     /* SECTION("POST request with form data") {
@@ -720,6 +846,8 @@ TEST_CASE("Client Request-Response Functionality", "[client]") {
 
         REQUIRE(response.status_code == 404);
     } */
+
+    server->stop();
 }
 
 /* TEST_CASE("HttpClient - Resource Management", "[client]") {

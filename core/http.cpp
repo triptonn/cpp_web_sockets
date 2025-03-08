@@ -12,8 +12,10 @@
 
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <thread>
 
 #include "http.hpp"
+#include "logger.hpp"
 #include "string_utils.hpp"
 
 HttpRequest HttpRequest::parse(const std::string &raw_request) {
@@ -415,4 +417,178 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
         }
     }
     return HttpResponse::parse(response_data);
+}
+
+void HttpServer::start() {
+    if (server_running.load()) {
+        return;
+    }
+
+    int bind_return = bind(
+        server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
+    if (bind_return < 0) {
+        throw std::runtime_error("Server failed to bind");
+    }
+
+    int listen_return = listen(server_fd, max_fd);
+    if (listen_return < 0) {
+        throw std::runtime_error("Server failed to listen");
+    }
+
+    server_running.store(true);
+    server_log.write("Server starting on port " + std::to_string(host_port));
+
+    server_thread = std::thread([this]() {
+        while (server_running.load()) {
+            this->main_loop();
+        }
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
+
+void register_route(const std::string &path,
+                    std::function<HttpResponse(const HttpRequest &)> handler) {}
+
+void HttpServer::stop() {
+    if (!server_running.load()) {
+        return;
+    }
+
+    server_running.store(false);
+    {
+        std::lock_guard<std::mutex> lock(client_mutex);
+        for (int client_fd : client_fds) {
+            if (client_fd > 0) {
+                close(client_fd);
+            }
+        }
+        client_fds.clear();
+    }
+
+    if (server_fd > 0) {
+        close(server_fd);
+    }
+
+    if (server_thread.joinable()) {
+        server_thread.join();
+    }
+
+    server_log.write("Server stopped");
+}
+
+void HttpServer::main_loop() {
+    while (server_running.load()) {
+        std::cout << "> " << std::flush;
+        FD_ZERO(&read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
+        FD_SET(server_fd, &read_fds);
+
+        for (int client_fd : client_fds) {
+            FD_SET(client_fd, &read_fds);
+        }
+
+        max_fd = server_fd;
+        for (int client_fd : client_fds) {
+            max_fd = std::max(max_fd, client_fd);
+        }
+        max_fd = std::max(max_fd, STDIN_FILENO);
+
+        int select_return =
+            select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
+        if (select_return < 0) {
+            throw std::runtime_error("Server failed to select");
+        }
+
+        handle_new_connection();
+        handle_user_input();
+
+        for (std::vector<int>::iterator it = client_fds.begin();
+             it != client_fds.end();) {
+
+            int client_fd = *it;
+            if (FD_ISSET(client_fd, &read_fds)) {
+                int result = handle_client_data(*it);
+                if (result == -5) {
+                    client_fds.erase(it);
+                }
+                ++it;
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
+void HttpServer::handle_new_connection() {
+    if (FD_ISSET(server_fd, &read_fds)) {
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int new_client_fd =
+            accept(server_fd, reinterpret_cast<struct sockaddr *>(&client_addr),
+                   &client_len);
+        if (new_client_fd < 0) {
+            server_log.write("Failed to accept new client connection");
+        } else {
+            std::string client_ip = inet_ntoa(client_addr.sin_addr);
+            std::lock_guard<std::mutex> lock(client_mutex);
+            server_log.write("New client connected from " + client_ip +
+                             " with fd: " + std::to_string(new_client_fd));
+            client_fds.insert(client_fds.begin(), new_client_fd);
+            server_log.write("New client connected: " +
+                             std::to_string(new_client_fd));
+        }
+    }
+}
+
+void HttpServer::handle_user_input() {
+    if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+        if (!server_running.load()) {
+            return;
+        }
+
+        std::string input;
+        std::getline(std::cin, input);
+
+        if (input == "quit") {
+            stop();
+            server_log.write("Server terminated by user");
+        }
+    }
+}
+
+int HttpServer::handle_client_data(int client_fd) {
+    char buffer[4096];
+    int bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+
+    if (bytes_received <= 0) {
+        std::lock_guard<std::mutex> lock(client_mutex);
+        auto it = std::find(client_fds.begin(), client_fds.end(), client_fd);
+        if (it != client_fds.end()) {
+            client_fds.erase(it);
+        }
+
+        server_log.write("Client disconnected: " + std::to_string(client_fd));
+        close(client_fd);
+        return -5;
+    }
+
+    buffer[bytes_received] = '\0';
+    server_log.write("Received: " + std::string(buffer));
+
+    HttpRequest request = HttpRequest::parse(buffer);
+    HttpResponse response = route_request(request);
+
+    std::string response_str = response.to_string();
+    int sending_status =
+        send(client_fd, response_str.c_str(), response_str.length(), 0);
+    if (sending_status == -1) {
+        server_log.write("Failed to send response: " +
+                         std::string(strerror(errno)));
+        return -1;
+    }
+
+    server_log.write("Sent reponse: " + std::to_string(sending_status) +
+                     " bytes");
+    return 0;
 }
