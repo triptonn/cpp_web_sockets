@@ -43,19 +43,18 @@ class HttpRequest {
     std::map<std::string, std::string> headers;
     std::string body;
 
-    // Default constructor just creating an empty HttpRequest shell
     HttpRequest() {}
 
     static HttpRequest parse(const std::string &raw_request);
-
     bool has_header(const std::string &name) const;
     std::string get_header(const std::string &name) const;
     void set_header(const std::string &key, const std::string &value);
+    std::string to_string() const;
+
 
     void create_get(const std::string &request_uri,
-                    const std::map<std::string, std::string> &parameters = {});
-
-    std::string to_string() const;
+                    const std::map<std::string,
+                    std::string> &parameters = {});
 
     void create_post(const std::string &request_uri) {
         method = "POST";
@@ -78,6 +77,7 @@ class HttpRequest {
         version = "HTTP/1.1";
         set_header("host", "localhost");
         set_header("content-length", "0");
+
     };
 
     void create_put(const std::string &request_uri,
@@ -143,33 +143,6 @@ void HttpRequest::create_put(const std::string &request_uri, const T &data,
     body = content;
 }
 
-inline bool HttpRequest::has_header(const std::string &name) const {
-    std::string lower_name = name;
-    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return headers.find(lower_name) != headers.end();
-}
-
-inline std::string HttpRequest::get_header(const std::string &name) const {
-    std::string lower_name = name;
-    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    auto it = headers.find(lower_name);
-    return (it != headers.end()) ? it->second : "";
-}
-
-inline void HttpRequest::set_header(const std::string &key,
-                                    const std::string &value) {
-    std::string lower_key = key;
-    std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    headers[lower_key] = value;
-}
-
-/////////////////////////////////
-// HTTP Response
-/////////////////////////////////
-
 class HttpResponse {
   public:
     int status_code;
@@ -191,10 +164,11 @@ class HttpResponse {
     static HttpResponse html_response(const std::string &html = "");
     static HttpResponse binary_response(const std::vector<uint8_t> &binary);
 
-    static HttpResponse switching_protocol();
     static HttpResponse not_found(const std::string &resource = "");
     static HttpResponse server_error(const std::string &message = "");
     static HttpResponse bad_request(const std::string &message = "");
+
+    static HttpResponse switching_protocol();
 
     // parsing
     static HttpResponse parse(const std::string &raw_response);
@@ -204,36 +178,26 @@ class HttpResponse {
     std::string get_header(const std::string &name) const;
 
     HttpResponse &set_body(const std::string &content,
-                           const std::string &content_type = "text/plain") {
-        body = content;
-        set_header("Content-Type", content_type);
-        set_header("Content-Length", std::to_string(content.length()));
-        return *this;
-    }
+                           const std::string &content_type = "text/plain");
 
     bool is_binary_response() { return is_binary; };
 
     HttpResponse &set_binary_body(
         const std::vector<uint8_t> &binary_content,
-        const std::string &content_type = "application/octet-stream") {
-        body = std::string(binary_content.begin(), binary_content.end());
-        is_binary = true;
-        set_header("Content-Type", content_type);
-        set_header("Content-Length", std::to_string(body.length()));
-        return *this;
-    }
+        const std::string &content_type = "application/octet-stream");
 
     std::vector<uint8_t> get_binary_body() {
         return std::vector<uint8_t>(body.begin(), body.end());
     }
 
-    std::string to_string() const;
-
     bool is_streaming_response() { return is_streaming; };
     void set_streaming(std::function<void(std::ostream &)> stream_callback,
                        size_t content_length,
                        const std::string &content_type = "text/plain");
+
     void write_to_stream(std::ostream &os) const;
+
+    std::string to_string() const;
 
   private:
     bool is_binary = false;
@@ -242,68 +206,23 @@ class HttpResponse {
     std::function<void(std::ostream &)> stream_callback;
 };
 
-inline bool HttpResponse::has_header(const std::string &name) const {
-    std::string lower_name = name;
-    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return headers.find(lower_name) != headers.end();
-}
-
-inline void HttpResponse::set_header(const std::string &key,
-                                     const std::string &value) {
-    std::string lower_key = key;
-
-    std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    headers[lower_key] = value;
-}
-
-inline std::string HttpResponse::get_header(const std::string &name) const {
-    std::string lower_name = name;
-    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    auto it = headers.find(lower_name);
-    return (it != headers.end()) ? it->second : "";
-}
-
 /////////////////////////////////
 // HTTP Client
 /////////////////////////////////
 
 class HttpClient {
   public:
-    Logger client_log = Logger("client.log");
-
     HttpClient(std::string host_name, short int host_port)
         : hostname(host_name), port(host_port) {
         std::cout << "Creating client \n";
-
         if (!resolve_hostname()) {
             throw std::runtime_error("Failed to resolve hostname: " + hostname);
         }
     }
 
-    signed int connect_to_server() {
-        std::cout << "Hostname: " << addr.sin_addr.s_addr << std::endl;
-        std::cout << "Port: " << addr.sin_port << std::endl;
-
-        if (connect(client_fd, reinterpret_cast<struct sockaddr *>(&addr),
-                    sizeof(addr)) < 0) {
-            std::cerr << "Connect failed\n";
-            close(client_fd);
-            return -1;
-        }
-        is_connected = true;
-        client_log.write("Connected to server: " + hostname + ":" + port_str);
-        return 0;
-    };
-
+    signed int connect_to_server();
     HttpResponse send_request(HttpRequest request);
-
-    void disconnect() {
-        is_connected = false;
-        client_log.write("Disconnected from server");
-    };
+    void disconnect();
 
     ~HttpClient() {
         if (is_connected) {
@@ -314,6 +233,8 @@ class HttpClient {
     };
 
   private:
+    Logger client_log = Logger("client.log");
+
     std::string hostname;
     std::string port_str;
 
@@ -323,57 +244,7 @@ class HttpClient {
     struct sockaddr_in addr;
     short int port;
 
-    bool resolve_hostname() {
-        struct addrinfo hints;
-        struct addrinfo *result;
-
-        memset(&hints, 0, sizeof(hints));
-
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_flags = AI_PASSIVE;
-
-        port_str = std::to_string(port);
-
-        std::cout << "Hostname: " << hostname << std::endl;
-        std::cout << "Port: " << port_str << std::endl;
-
-        int status =
-            getaddrinfo(hostname.c_str(), port_str.c_str(), &hints, &result);
-
-        if (status != 0) {
-            std::cerr << "getaddrinfo error: " << gai_strerror(status)
-                      << std::endl;
-            return false;
-        }
-
-        struct addrinfo *rp;
-        for (rp = result; rp != NULL; rp = rp->ai_next) {
-            client_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-
-            if (client_fd == -1) {
-                continue;
-            }
-
-            std::cout << "before Memcpy: " << addr.sin_addr.s_addr << ", "
-                      << addr.sin_port << std::endl;
-            if (rp->ai_family == AF_INET) {
-                memcpy(&addr, rp->ai_addr, sizeof(struct sockaddr_in));
-                std::cout << "after Memcpy: " << addr.sin_addr.s_addr << ", "
-                          << addr.sin_port << std::endl;
-                break;
-            }
-        }
-
-        freeaddrinfo(result);
-
-        if (rp == nullptr) {
-            std::cerr << "Could not resolve hostname" << std::endl;
-            return false;
-        }
-
-        return true;
-    }
+    bool resolve_hostname();
 };
 
 /////////////////////////////////

@@ -689,7 +689,6 @@ TEST_CASE("HttpClient - Connection Management", "[client]") {
         client.connect_to_server();
         client.disconnect();
         REQUIRE_NOTHROW(client.connect_to_server());
-
         server->stop();
     }
 

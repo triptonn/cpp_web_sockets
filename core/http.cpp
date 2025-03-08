@@ -7,6 +7,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 
@@ -61,6 +62,29 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
         request.body = body;
     }
     return request;
+}
+
+bool HttpRequest::has_header(const std::string &name) const {
+    std::string lower_name = name;
+    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return headers.find(lower_name) != headers.end();
+}
+
+std::string HttpRequest::get_header(const std::string &name) const  {
+    std::string lower_name = name;
+    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    auto it = headers.find(lower_name);
+    return (it != headers.end()) ? it->second : "";
+}
+
+void HttpRequest::set_header(const std::string &key,
+                             const std::string &value) {
+    std::string lower_key = key;
+    std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    headers[lower_key] = value;
 }
 
 void HttpRequest::create_get(
@@ -219,15 +243,9 @@ void HttpRequest::create_delete(
     set_header("Host", "localhost");
 }
 
-HttpResponse HttpResponse::switching_protocol() {
-    // TODO: Implment correct header values
-    HttpResponse response(101, "Switching Protocols");
-    response.set_header("Upgrade", "websocket");
-    response.set_header("Connection", "Upgrade");
-    response.set_header("Sec-WebSocket-Accept", "SAMPLE_CODE");
-
-    return response;
-}
+/////////////////////////////////
+// HTTP Response
+/////////////////////////////////
 
 HttpResponse HttpResponse::ok(const std::string &body) {
     HttpResponse response(200, "OK");
@@ -252,8 +270,7 @@ HttpResponse HttpResponse::html_response(const std::string &html_body) {
     return response;
 }
 
-HttpResponse
-HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
+HttpResponse HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
     HttpResponse response(200, "OK");
     response.set_binary_body(binary_body);
     response.set_header("Content-Type", "image/png");
@@ -294,34 +311,14 @@ void HttpResponse::set_streaming(
     set_header("Content-Length", std::to_string(content_length));
 }
 
-void HttpResponse::write_to_stream(std::ostream &os) const {
-    if (is_streaming && stream_callback) {
-        stream_callback(os);
-    }
-}
+HttpResponse HttpResponse::switching_protocol() {
+    // TODO: Implment correct header values
+    HttpResponse response(101, "Switching Protocols");
+    response.set_header("Upgrade", "websocket");
+    response.set_header("Connection", "Upgrade");
+    response.set_header("Sec-WebSocket-Accept", "SAMPLE_CODE");
 
-std::string HttpResponse::to_string() const {
-    std::ostringstream response_stream;
-    response_stream << version << " " << status_code << " " << reason_phrase
-                    << "\r\n";
-
-    auto headers_copy = headers;
-
-    if (!has_header("content-length")) {
-        headers_copy["content-length"] = std::to_string(body.length());
-    }
-
-    for (const auto [name, value] : headers_copy) {
-        std::string display_name = format_header_name(name);
-        response_stream << display_name << ": " << value << "\r\n";
-    }
-
-    response_stream << "\r\n";
-    if (!body.empty()) {
-        response_stream << body;
-    }
-
-    return response_stream.str();
+    return response;
 }
 
 HttpResponse HttpResponse::parse(const std::string &raw_response) {
@@ -368,6 +365,93 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
         response.body = body;
     }
     return response;
+}
+
+bool HttpResponse::has_header(const std::string &name) const {
+    std::string lower_name = name;
+    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return headers.find(lower_name) != headers.end();
+}
+
+void HttpResponse::set_header(const std::string &key,
+                              const std::string &value) {
+    std::string lower_key = key;
+
+    std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    headers[lower_key] = value;
+}
+
+std::string HttpResponse::get_header(const std::string &name) const {
+    std::string lower_name = name;
+    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    auto it = headers.find(lower_name);
+    return (it != headers.end()) ? it->second : "";
+}
+
+HttpResponse &HttpResponse::set_body(const std::string &content,
+                                     const std::string &content_type) {
+    body = content;
+    set_header("Content-Type", content_type);
+    set_header("Content-Length", std::to_string(content.length()));
+    return *this;
+}
+
+HttpResponse &HttpResponse::set_binary_body(const std::vector<uint8_t> &binary_content,
+                                            const std::string &content_type) {
+    body = std::string(binary_content.begin(), binary_content.end());
+    is_binary = true;
+    set_header("Content-Type", content_type);
+    set_header("Content-Length", std::to_string(body.length()));
+    return *this;
+}
+
+void HttpResponse::write_to_stream(std::ostream& os) const {
+    if (is_streaming && stream_callback) {
+        stream_callback(os);
+    }
+}
+
+std::string HttpResponse::to_string() const {
+    std::ostringstream response_stream;
+    response_stream << version << " " << status_code << " " << reason_phrase
+                    << "\r\n";
+
+    auto headers_copy = headers;
+
+    if (!has_header("content-length")) {
+        headers_copy["content-length"] = std::to_string(body.length());
+    }
+
+    for (const auto [name, value] : headers_copy) {
+        std::string display_name = format_header_name(name);
+        response_stream << display_name << ": " << value << "\r\n";
+    }
+
+    response_stream << "\r\n";
+    if (!body.empty()) {
+        response_stream << body;
+    }
+
+    return response_stream.str();
+}
+
+/////////////////////////////////
+// HTTP Client
+/////////////////////////////////
+
+signed int HttpClient::connect_to_server() {
+    if (connect(client_fd, reinterpret_cast<struct sockaddr *>(&addr),
+                sizeof(addr)) < 0) {
+        client_log.write("Connect failed");
+        close(client_fd);
+        return -1;
+    }
+    is_connected = true;
+    client_log.write("Connected to server: " + hostname + ":" + port_str);
+    return 0;
 }
 
 HttpResponse HttpClient::send_request(HttpRequest request) {
@@ -419,6 +503,67 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
     return HttpResponse::parse(response_data);
 }
 
+void HttpClient::disconnect() {
+    is_connected = false;
+    client_log.write("Disconnected from server");
+}
+
+bool HttpClient::resolve_hostname() {
+    struct addrinfo hints;
+    struct addrinfo *result;
+
+    memset(&hints, 0, sizeof(hints));
+
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    port_str = std::to_string(port);
+
+    std::cout << "Hostname: " << hostname << std::endl;
+    std::cout << "Port: " << port_str << std::endl;
+
+    int status =
+        getaddrinfo(hostname.c_str(), port_str.c_str(), &hints, &result);
+
+    if (status != 0) {
+        std::cerr << "getaddrinfo error: " << gai_strerror(status)
+                  << std::endl;
+        return false;
+    }
+
+    struct addrinfo *rp;
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        client_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+        if (client_fd == -1) {
+            continue;
+        }
+
+        std::cout << "before Memcpy: " << addr.sin_addr.s_addr << ", "
+                  << addr.sin_port << std::endl;
+        if (rp->ai_family == AF_INET) {
+            memcpy(&addr, rp->ai_addr, sizeof(struct sockaddr_in));
+            std::cout << "after Memcpy: " << addr.sin_addr.s_addr << ", "
+                      << addr.sin_port << std::endl;
+            break;
+        }
+    }
+
+    freeaddrinfo(result);
+
+    if (rp == nullptr) {
+        std::cerr << "Could not resolve hostname" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/////////////////////////////////
+// HTTP Client
+/////////////////////////////////
+
 void HttpServer::start() {
     if (server_running.load()) {
         return;
@@ -456,6 +601,7 @@ void HttpServer::stop() {
     }
 
     server_running.store(false);
+
     {
         std::lock_guard<std::mutex> lock(client_mutex);
         for (int client_fd : client_fds) {
@@ -503,9 +649,8 @@ void HttpServer::main_loop() {
         handle_new_connection();
         handle_user_input();
 
-        for (std::vector<int>::iterator it = client_fds.begin();
-             it != client_fds.end();) {
-
+        for (std::vector<int>::iterator it = client_fds.begin(); it != client_fds.end(); ) {
+            std::lock_guard<std::mutex> lock(client_mutex);
             int client_fd = *it;
             if (FD_ISSET(client_fd, &read_fds)) {
                 int result = handle_client_data(*it);
