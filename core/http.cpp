@@ -8,6 +8,7 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <netdb.h>
 #include <sstream>
 #include <string>
 
@@ -311,15 +312,14 @@ void HttpResponse::set_streaming(
     set_header("Content-Length", std::to_string(content_length));
 }
 
-HttpResponse HttpResponse::switching_protocol() {
-    // TODO: Implment correct header values
+// TODO: Implement protocol switching using correct header values
+/* HttpResponse HttpResponse::switching_protocol() {
     HttpResponse response(101, "Switching Protocols");
     response.set_header("Upgrade", "websocket");
     response.set_header("Connection", "Upgrade");
     response.set_header("Sec-WebSocket-Accept", "SAMPLE_CODE");
-
     return response;
-}
+} */
 
 HttpResponse HttpResponse::parse(const std::string &raw_response) {
     HttpResponse response;
@@ -327,9 +327,20 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
     std::string line;
 
     if (std::getline(stream, line)) {
-        std::istringstream response_line(line);
-        response_line >> response.version >> response.status_code >>
-            response.reason_phrase;
+        if(!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        size_t first_space = line.find(' ');
+        if (first_space != std::string::npos) {
+            response.version = line.substr(0, first_space);
+            size_t second_space = line.find(' ', first_space + 1);
+            if (second_space != std::string::npos) {
+                std::string status_code_str = line.substr(first_space + 1, second_space - first_space - 1);
+                response.status_code = std::stoi(status_code_str);
+                response.reason_phrase = line.substr(second_space + 1);
+            }
+        }
     }
 
     while (std::getline(stream, line) && !line.empty() && line != "\r") {
@@ -445,7 +456,7 @@ std::string HttpResponse::to_string() const {
 signed int HttpClient::connect_to_server() {
     if (connect(client_fd, reinterpret_cast<struct sockaddr *>(&addr),
                 sizeof(addr)) < 0) {
-        client_log.write("Connect failed");
+        client_log.write("Client " + std::to_string(client_fd) + " failed to connect");
         close(client_fd);
         return -1;
     }
@@ -463,6 +474,8 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
     if (send(client_fd, request_str.c_str(), request_str.length(), 0) < 0) {
         throw std::runtime_error("Failed to send request");
     }
+
+    client_log.write("Client " + std::to_string(client_fd) + " sent request: " + request.method + ", " + request.path);
 
     std::string response_data;
     char buffer[4096];
@@ -493,6 +506,8 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
             break;
         }
 
+        client_log.write("Client " + std::to_string(client_fd) + " received response");
+
         buffer[bytes_received] = '\0';
         response_data += buffer;
 
@@ -505,13 +520,13 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
 
 void HttpClient::disconnect() {
     is_connected = false;
-    client_log.write(std::to_string(client_fd)+" disconnected");
+    client_log.write("Client " + std::to_string(client_fd) + " disconnected");
 }
 
 bool HttpClient::resolve_hostname() {
     struct addrinfo hints;
     struct addrinfo *result;
-
+ 
     memset(&hints, 0, sizeof(hints));
 
     hints.ai_family = AF_UNSPEC;
@@ -523,8 +538,7 @@ bool HttpClient::resolve_hostname() {
         getaddrinfo(hostname.c_str(), port_str.c_str(), &hints, &result);
 
     if (status != 0) {
-        std::cerr << "getaddrinfo error: " << gai_strerror(status)
-                  << std::endl;
+        throw std::runtime_error("Error using getaddrinfo: " + std::to_string(*gai_strerror(status)));
         return false;
     }
 
@@ -545,7 +559,7 @@ bool HttpClient::resolve_hostname() {
     freeaddrinfo(result);
 
     if (rp == nullptr) {
-        std::cerr << "Could not resolve hostname" << std::endl;
+        throw std::runtime_error("Could not resolve hostname '" + hostname + "'");
         return false;
     }
 

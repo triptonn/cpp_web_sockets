@@ -15,6 +15,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -213,10 +214,10 @@ class HttpClient {
   public:
     HttpClient(std::string host_name, short int host_port)
         : hostname(host_name), port(host_port) {
-        std::cout << "Creating client \n";
         if (!resolve_hostname()) {
             throw std::runtime_error("Failed to resolve hostname: " + hostname);
         }
+        client_log.write("Client " + std::to_string(client_fd) + " created");
     }
 
     signed int connect_to_server();
@@ -224,11 +225,11 @@ class HttpClient {
     void disconnect();
 
     ~HttpClient() {
+        client_log.write("Removing client " + std::to_string(client_fd));
         if (is_connected) {
             close(client_fd);
             is_connected = false;
         }
-        client_log.write("Removing client");
     };
 
   private:
@@ -293,9 +294,11 @@ class HttpServer {
     Logger server_log = Logger("server.log");
 
     HttpServer(short int port) : host_port(port) {
-        std::cout << "Logger initialized" << std::endl;
-
+        if (host_port < 1024) {
+            throw std::runtime_error("Port number may not be below 1024");
+        }
         server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        server_log.write("Server " + std::to_string(server_fd) + " started");
         int reuse = 1;
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
                        sizeof(reuse)) < 0) {
