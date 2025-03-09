@@ -51,7 +51,6 @@ class HttpRequest {
     void set_header(const std::string &key, const std::string &value);
     std::string to_string() const;
 
-
     void create_get(const std::string &request_uri,
                     const std::map<std::string,
                     std::string> &parameters = {});
@@ -330,9 +329,9 @@ class HttpServer {
         if (server_running.load()) {
             stop();
         }
-        /* if (server_thread.joinable()) {
+        if (server_thread.joinable()) {
             server_thread.join();
-        } */
+        }
         server_log.write("Server shutting down");
     }
 };

@@ -669,27 +669,19 @@ TEST_CASE("HttpClient - Constructor and Hostname Resolution", "[client]") {
 }
 
 TEST_CASE("HttpClient - Connection Management", "[client]") {
-    std::unique_ptr<HttpServer> server;
-
-    SECTION("Connect to running server") {
-        server = std::make_unique<HttpServer>(8080);
-        server->start();
-
+    SECTION("Connect to running server and disconnect from running server") {
         HttpClient client("localhost", 8080);
         REQUIRE(client.connect_to_server() == 0);
+        REQUIRE_NOTHROW(client.disconnect());
 
-        server->stop();
     }
 
     SECTION("Connection state tracking") {
-        server = std::make_unique<HttpServer>(8080);
-        server->start();
-
         HttpClient client("localhost", 8080);
-        client.connect_to_server();
+        REQUIRE_NOTHROW(client.connect_to_server());
+
         client.disconnect();
         REQUIRE_NOTHROW(client.connect_to_server());
-        server->stop();
     }
 
     SECTION("Connect to non-existent server") {
@@ -713,7 +705,7 @@ TEST_CASE("HttpServer - Basic Setup", "[server]") {
     } */
 }
 
-/* TEST_CASE("HttpServer - Request HAndling", "[server]") {
+/* TEST_CASE("HttpServer - Request Handling", "[server]") {
     HttpServer(8082);
 
     SECTION("Register GET route handler") {
@@ -802,14 +794,6 @@ TEST_CASE("HttpServer - Response Streaming", "[server]") {
 } */
 
 TEST_CASE("Client Request-Response Functionality", "[client]") {
-    std::unique_ptr<HttpServer> server = std::make_unique<HttpServer>(8087);
-    server->get("/test", [](const HttpRequest &req) {
-        return HttpResponse::ok("Test response");
-    });
-
-    server->start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
     SECTION("Send GET request and receive response") {
         HttpClient client("localhost", 8087);
         REQUIRE_NOTHROW(client.connect_to_server());
@@ -845,8 +829,6 @@ TEST_CASE("Client Request-Response Functionality", "[client]") {
 
         REQUIRE(response.status_code == 404);
     } */
-
-    server->stop();
 }
 
 /* TEST_CASE("HttpClient - Resource Management", "[client]") {

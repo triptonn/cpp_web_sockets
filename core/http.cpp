@@ -505,7 +505,7 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
 
 void HttpClient::disconnect() {
     is_connected = false;
-    client_log.write("Disconnected from server");
+    client_log.write(std::to_string(client_fd)+" disconnected");
 }
 
 bool HttpClient::resolve_hostname() {
@@ -519,10 +519,6 @@ bool HttpClient::resolve_hostname() {
     hints.ai_flags = AI_PASSIVE;
 
     port_str = std::to_string(port);
-
-    std::cout << "Hostname: " << hostname << std::endl;
-    std::cout << "Port: " << port_str << std::endl;
-
     int status =
         getaddrinfo(hostname.c_str(), port_str.c_str(), &hints, &result);
 
@@ -540,12 +536,8 @@ bool HttpClient::resolve_hostname() {
             continue;
         }
 
-        std::cout << "before Memcpy: " << addr.sin_addr.s_addr << ", "
-                  << addr.sin_port << std::endl;
         if (rp->ai_family == AF_INET) {
             memcpy(&addr, rp->ai_addr, sizeof(struct sockaddr_in));
-            std::cout << "after Memcpy: " << addr.sin_addr.s_addr << ", "
-                      << addr.sin_port << std::endl;
             break;
         }
     }
@@ -600,8 +592,6 @@ void HttpServer::stop() {
         return;
     }
 
-    server_running.store(false);
-
     {
         std::lock_guard<std::mutex> lock(client_mutex);
         for (int client_fd : client_fds) {
@@ -620,6 +610,7 @@ void HttpServer::stop() {
         server_thread.join();
     }
 
+    server_running.store(false);
     server_log.write("Server stopped");
 }
 
@@ -630,8 +621,11 @@ void HttpServer::main_loop() {
         FD_SET(STDIN_FILENO, &read_fds);
         FD_SET(server_fd, &read_fds);
 
-        for (int client_fd : client_fds) {
-            FD_SET(client_fd, &read_fds);
+        {
+            std::lock_guard<std::mutex> lock(client_mutex);
+            for (int client_fd : client_fds) {
+                FD_SET(client_fd, &read_fds);
+            }
         }
 
         max_fd = server_fd;
@@ -640,8 +634,12 @@ void HttpServer::main_loop() {
         }
         max_fd = std::max(max_fd, STDIN_FILENO);
 
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000;
+
         int select_return =
-            select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
+            select(max_fd + 1, &read_fds, nullptr, nullptr, &timeout);
         if (select_return < 0) {
             throw std::runtime_error("Server failed to select");
         }
@@ -649,8 +647,8 @@ void HttpServer::main_loop() {
         handle_new_connection();
         handle_user_input();
 
+        std::lock_guard<std::mutex> lock(client_mutex);
         for (std::vector<int>::iterator it = client_fds.begin(); it != client_fds.end(); ) {
-            std::lock_guard<std::mutex> lock(client_mutex);
             int client_fd = *it;
             if (FD_ISSET(client_fd, &read_fds)) {
                 int result = handle_client_data(*it);
