@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +16,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -251,54 +253,190 @@ class HttpClient {
 // HTTP Server
 /////////////////////////////////
 
-class HttpServer {
-  private:
-    std::mutex client_mutex;
-    std::atomic<bool> server_running{false};
+class FdSet {
+public:
+    FdSet() { clear(); }
 
-    std::thread server_thread;
-
-    std::vector<int> client_fds;
-    fd_set read_fds;
-    short int host_port;
-    int max_fd = 100;
-    timeval timeout;
-    int server_fd;
-    int flags;
-
-    struct sockaddr_in addr;
-
-    using RouteHandler = std::function<HttpResponse(const HttpRequest &)>;
-    struct Route {
-        std::string method;
-        std::string path;
-        RouteHandler handler;
-    };
-    std::vector<Route> routes;
-
-    void handle_new_connection();
-    void handle_user_input();
-    int handle_client_data(int client_fd);
-    void main_loop();
-
-    HttpResponse route_request(const HttpRequest &request) {
-        for (const auto route : routes) {
-            if (route.method == request.method && route.path == request.path) {
-                return route.handler(request);
-            }
-        }
-        return HttpResponse::not_found(request.path);
+    void add(int fd) {
+        FD_SET(fd, &read_fds);
+        tracked_fds.insert(fd);
+        max_fd = std::max(max_fd, fd);
     }
 
-  public:
+    void remove(int fd) {
+        FD_CLR(fd, &read_fds);
+        tracked_fds.erase(fd);
+        if (fd == max_fd) {
+            max_fd = 0;
+            for (int tracked_fd : tracked_fds) {
+                max_fd = std::max(max_fd, tracked_fd);
+            }
+        }
+    }
+
+    bool is_set(int fd) const {
+        return FD_ISSET(fd, &read_fds);
+    }
+
+    void clear() {
+        FD_ZERO(&read_fds);
+        tracked_fds.clear();
+        max_fd = 0;
+    }
+
+    int get_max_fd() const {
+        return max_fd;
+    }
+
+    const fd_set* get_read_fds() const {
+        return &read_fds;
+    }
+
+    fd_set* get_read_fds() {
+        return &read_fds;
+    }
+
+private:
+    fd_set read_fds;
+    std::set<int> tracked_fds;
+    int max_fd = 0;
+};
+
+class ClientSession {
+public:
+    ClientSession(int fd, const std::string& ip) : fd(fd), ip_address(ip), connected_time(std::chrono::steady_clock::now()) {}
+
+    int get_fd() const { return fd; }
+    const std::string& get_ip() const { return ip_address; }
+    bool is_active() const { return active; }
+    void set_active(bool state) { active = state; }
+
+private:
+    int fd;
+    std::string ip_address;
+    bool active = true;
+    std::chrono::steady_clock::time_point connected_time;
+    std::chrono::steady_clock::time_point last_activity;
+};
+
+class ServerEventLoop {
+public:
+    enum class EventType {
+        NONE,
+        NEW_CONNECTION,
+        CLIENT_DATA,
+        CLIENT_DISCONNECT,
+        SERVER_COMMAND,
+    };
+
+    struct Event {
+        EventType type;
+        int fd;
+        std::string data;
+    };
+
+    bool process_event(const Event& event) {
+        switch(event.type) {
+            case EventType::NEW_CONNECTION:
+                return handle_new_connection(event);
+            case EventType::CLIENT_DATA:
+                return handle_client_data(event);
+            case EventType::CLIENT_DISCONNECT:
+                return handle_client_disconnect(event);
+            case EventType::SERVER_COMMAND:
+                return handle_server_command(event);
+            default:
+                return false;
+        }
+    }
+
+private:
+    bool handle_new_connection(const Event& event) { return true; }
+    bool handle_client_data(const Event& event) { return true; }
+    bool handle_client_disconnect(const Event& event) { return true; }
+    bool handle_server_command(const Event& event) { return true; }
+};
+
+class SocketGuard {
+public:
+    explicit SocketGuard(int fd) : fd(fd) {}
+
+    ~SocketGuard() {
+        if (fd >= 0) {
+            close(fd);
+        }
+    }
+
+    int get() const { return fd; }
+    int release() {
+        int temp = fd;
+        fd = -1;
+        return temp;
+    }
+
+private:
+    int fd;
+};
+
+class ClientManager {
+public:
+    void add_client(std::unique_ptr<ClientSession> client) {
+        std::lock_guard<std::mutex> lock(mutex);
+        clients[client->get_fd()] = std::move(client);
+    }
+
+    void remove_client(int fd) {
+        std::lock_guard<std::mutex> lock(mutex);
+        clients.erase(fd);
+    }
+
+    bool has_client(int fd) const {
+        std::lock_guard<std::mutex> lock(mutex);
+        return clients.find(fd) != clients.end();
+    }
+
+    size_t client_count() const {
+        std::lock_guard<std::mutex> lock(mutex);
+        return clients.size();
+    }
+
+    const std::unordered_map<int, std::unique_ptr<ClientSession>>& get_clients() const {
+        return clients;
+    }
+
+    std::vector<int> get_client_fds() const {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::vector<int> fds;
+        fds.reserve(clients.size());
+        for (const auto& client : clients) {
+            fds.push_back(client.first);
+        }
+        return fds;
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(mutex);
+        clients.clear();
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::unordered_map<int, std::unique_ptr<ClientSession>> clients;
+};
+
+class HttpServer {
+public:
     Logger server_log = Logger("server.log");
+
+    using RouteHandler = std::function<HttpResponse(const HttpRequest &)>;
 
     HttpServer(short int port) : host_port(port) {
         if (host_port < 1024) {
-            throw std::runtime_error("Port number may not be below 1024");
+            throw std::runtime_error("Port number must not be below 1024");
         }
         server_fd = socket(AF_INET, SOCK_STREAM, 0);
         server_log.write("Server " + std::to_string(server_fd) + " started");
+
         int reuse = 1;
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
                        sizeof(reuse)) < 0) {
@@ -312,6 +450,16 @@ class HttpServer {
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
     }
 
+    ~HttpServer() {
+        if (server_running.load()) {
+            stop();
+        }
+        if (server_thread.joinable()) {
+            server_thread.join();
+        }
+        server_log.write("Server shutting down");
+    }
+
     void start();
     void stop();
 
@@ -323,18 +471,48 @@ class HttpServer {
         register_route("POST", path, handler);
     }
 
-    void register_route(const std::string &method, const std::string &path,
+    void register_route(const std::string &method,
+                        const std::string &path,
                         RouteHandler handler) {
         routes.push_back({method, path, handler});
     }
 
-    ~HttpServer() {
-        if (server_running.load()) {
-            stop();
-        }
-        if (server_thread.joinable()) {
-            server_thread.join();
-        }
-        server_log.write("Server shutting down");
-    }
+
+private:
+    std::atomic<bool> server_running{false};
+    std::mutex client_mutex;
+    std::condition_variable client_cv;
+    std::thread server_thread;
+
+    std::condition_variable queue_cv;
+
+    struct Route {
+        std::string method;
+        std::string path;
+        RouteHandler handler;
+    };
+    std::vector<Route> routes;
+
+    FdSet fd_set;
+
+    ClientManager client_manager;
+
+    short int host_port;
+    timeval timeout;
+    int server_fd;
+    std::string server_fd_str;
+    int flags;
+
+    struct sockaddr_in addr;
+
+    void main_loop();
+
+    void handle_new_connection();
+    void handle_user_input();
+    void handle_new_client(int client_fd, const sockaddr_in& client_addr);
+    int handle_client_data(int client_fd);
+    void handle_client_disconnect(int client_fd);
+    bool check_connection(int client_fd);
+
+    HttpResponse route_request(const HttpRequest &request);
 };

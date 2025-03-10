@@ -7,7 +7,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
-#include <mutex>
+#include <memory>
 #include <netdb.h>
 #include <sstream>
 #include <string>
@@ -567,7 +567,7 @@ bool HttpClient::resolve_hostname() {
 }
 
 /////////////////////////////////
-// HTTP Client
+// HTTP Server
 /////////////////////////////////
 
 void HttpServer::start() {
@@ -577,11 +577,12 @@ void HttpServer::start() {
 
     int bind_return = bind(
         server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
+
     if (bind_return < 0) {
         throw std::runtime_error("Server failed to bind");
     }
 
-    int listen_return = listen(server_fd, max_fd);
+    int listen_return = listen(server_fd, fd_set.get_max_fd());
     if (listen_return < 0) {
         throw std::runtime_error("Server failed to listen");
     }
@@ -590,9 +591,7 @@ void HttpServer::start() {
     server_log.write("Server starting on port " + std::to_string(host_port));
 
     server_thread = std::thread([this]() {
-        while (server_running.load()) {
-            this->main_loop();
-        }
+        this->main_loop();
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -606,79 +605,76 @@ void HttpServer::stop() {
         return;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(client_mutex);
-        for (int client_fd : client_fds) {
-            if (client_fd > 0) {
-                close(client_fd);
-            }
-        }
-        client_fds.clear();
-    }
-
-    if (server_fd > 0) {
-        close(server_fd);
-    }
+    server_running.store(false);
+    queue_cv.notify_one();
 
     if (server_thread.joinable()) {
         server_thread.join();
     }
 
-    server_running.store(false);
     server_log.write("Server stopped");
+
+    for (int client_fd : client_manager.get_client_fds()) {
+        if (client_fd > 0) {
+            close(client_fd);
+        }
+    }
+    client_manager.clear();
+
+    if (server_fd > 0) {
+        close(server_fd);
+    }
 }
 
 void HttpServer::main_loop() {
     while (server_running.load()) {
-        std::cout << "> " << std::flush;
-        FD_ZERO(&read_fds);
-        FD_SET(STDIN_FILENO, &read_fds);
-        FD_SET(server_fd, &read_fds);
+        fd_set.clear();
+        fd_set.add(server_fd);
+        fd_set.add(STDIN_FILENO);
 
-        {
-            std::lock_guard<std::mutex> lock(client_mutex);
-            for (int client_fd : client_fds) {
-                FD_SET(client_fd, &read_fds);
-            }
+        for (int client_fd : client_manager.get_client_fds()) {
+            fd_set.add(client_fd);
         }
-
-        max_fd = server_fd;
-        for (int client_fd : client_fds) {
-            max_fd = std::max(max_fd, client_fd);
-        }
-        max_fd = std::max(max_fd, STDIN_FILENO);
 
         struct timeval timeout;
         timeout.tv_sec = 0;
         timeout.tv_usec = 100000;
 
         int select_return =
-            select(max_fd + 1, &read_fds, nullptr, nullptr, &timeout);
+            select(fd_set.get_max_fd() + 1,
+                   fd_set.get_read_fds(),
+                   nullptr, nullptr, &timeout);
+
         if (select_return < 0) {
-            throw std::runtime_error("Server failed to select");
+            continue;
         }
 
-        handle_new_connection();
-        handle_user_input();
+        if (!server_running.load()) {
+            if (errno == EINTR) {
+                continue;
+            }
+            server_log.write("Select error: " + std::string(strerror(errno)));
+            break;
+        }
 
-        std::lock_guard<std::mutex> lock(client_mutex);
-        for (std::vector<int>::iterator it = client_fds.begin(); it != client_fds.end(); ) {
-            int client_fd = *it;
-            if (FD_ISSET(client_fd, &read_fds)) {
-                int result = handle_client_data(*it);
-                if (result == -5) {
-                    client_fds.erase(it);
-                }
-                ++it;
-            } else {
-                ++it;
+        if (fd_set.is_set(server_fd)) {
+            handle_new_connection();
+        }
+
+        if (fd_set.is_set(STDIN_FILENO)) {
+            handle_user_input();
+        }
+
+        for (int fd : client_manager.get_client_fds()) {
+            if(fd_set.is_set(fd) && client_manager.has_client(fd)) {
+                handle_client_data(fd);
             }
         }
     }
 }
 
 void HttpServer::handle_new_connection() {
-    if (FD_ISSET(server_fd, &read_fds)) {
+    if (fd_set.is_set(server_fd)) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         int new_client_fd =
@@ -686,20 +682,15 @@ void HttpServer::handle_new_connection() {
                    &client_len);
         if (new_client_fd < 0) {
             server_log.write("Failed to accept new client connection");
-        } else {
-            std::string client_ip = inet_ntoa(client_addr.sin_addr);
-            std::lock_guard<std::mutex> lock(client_mutex);
-            server_log.write("New client connected from " + client_ip +
-                             " with fd: " + std::to_string(new_client_fd));
-            client_fds.insert(client_fds.begin(), new_client_fd);
-            server_log.write("New client connected: " +
-                             std::to_string(new_client_fd));
+            return;
         }
+
+        handle_new_client(new_client_fd, client_addr);
     }
 }
 
 void HttpServer::handle_user_input() {
-    if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+    if (fd_set.is_set(STDIN_FILENO)) {
         if (!server_running.load()) {
             return;
         }
@@ -714,15 +705,24 @@ void HttpServer::handle_user_input() {
     }
 }
 
+void HttpServer::handle_new_client(int client_fd, const sockaddr_in& client_addr) {
+    std::unique_ptr<ClientSession> session_ptr(new ClientSession(client_fd, std::to_string(client_addr.sin_addr.s_addr)));
+    fd_set.add(client_fd);
+    client_manager.add_client(std::move(session_ptr));
+
+    std::string client_fd_str = std::to_string(client_fd);
+
+    std::string log_message = "Client " + client_fd_str + " connected";
+    server_log.write(log_message);
+}
+
 int HttpServer::handle_client_data(int client_fd) {
     char buffer[4096];
     int bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
 
     if (bytes_received <= 0) {
-        std::lock_guard<std::mutex> lock(client_mutex);
-        auto it = std::find(client_fds.begin(), client_fds.end(), client_fd);
-        if (it != client_fds.end()) {
-            client_fds.erase(it);
+        if (client_manager.has_client(client_fd) == true) {
+            client_manager.remove_client(client_fd);
         }
 
         server_log.write("Client disconnected: " + std::to_string(client_fd));
@@ -749,3 +749,29 @@ int HttpServer::handle_client_data(int client_fd) {
                      " bytes");
     return 0;
 }
+
+void HttpServer::handle_client_disconnect(int client_fd) {
+    if (!client_manager.has_client(client_fd)) {
+        return;
+    }
+    fd_set.remove(client_fd);
+    client_manager.remove_client(client_fd);
+
+    close(client_fd);
+
+    std::string log_message = "Client " + std::to_string(client_fd) + " disconnected";
+    server_log.write(log_message);
+}
+
+bool HttpServer::check_connection(int client_fd) {
+    return client_manager.has_client(client_fd);
+}
+
+HttpResponse HttpServer::route_request(const HttpRequest &request) {
+    for (const auto route : routes) {
+        if (route.method == request.method && route.path == request.path) {
+            return route.handler(request);
+        }
+    }
+    return HttpResponse::not_found(request.path);
+};
