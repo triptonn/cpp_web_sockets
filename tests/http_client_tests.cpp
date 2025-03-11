@@ -39,19 +39,19 @@ TEST_CASE("HttpClient - Request Creation and Formatting", "[client]") {
 
     SECTION("Create and format POST request with form data") {
         HttpRequest request;
-        std::map<std::string, std::string> form_data = {
-            {"username", "test"},
-            {"password", "123"}
-        };
+        std::map<std::string, std::string> form_data = {{"username", "test"},
+                                                        {"password", "123"}};
         request.create_post("/login", form_data);
 
         std::string formatted = request.to_string();
         REQUIRE(formatted.find("POST /login HTTP/1.1") == 0);
-        REQUIRE(formatted.find("Content-Type: application/x-www-form-urlencoded\r\n") != std::string::npos);
-        REQUIRE(
-            ((formatted.find("username=test&password=123") != std::string::npos) ||
-            (formatted.find("password=123&username=test") != std::string::npos))
-        );
+        REQUIRE(formatted.find(
+                    "Content-Type: application/x-www-form-urlencoded\r\n") !=
+                std::string::npos);
+        REQUIRE(((formatted.find("username=test&password=123") !=
+                  std::string::npos) ||
+                 (formatted.find("password=123&username=test") !=
+                  std::string::npos)));
     }
 
     SECTION("Create and format POST request with JSON") {
@@ -61,19 +61,19 @@ TEST_CASE("HttpClient - Request Creation and Formatting", "[client]") {
 
         std::string formatted = request.to_string();
         REQUIRE(formatted.find("POST /api/user HTTP/1.1\r\n") == 0);
-        REQUIRE(formatted.find("Content-Type: application/json") != std::string::npos);
+        REQUIRE(formatted.find("Content-Type: application/json") !=
+                std::string::npos);
         REQUIRE(formatted.find(json_data) != std::string::npos);
     }
 }
 
 TEST_CASE("HttpClient - Response Parsing", "[client]") {
     SECTION("Parse successful response") {
-        std::string raw_response = 
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Lenght: 21\r\n"
-            "\r\n"
-            "{\"status\": \"success\"}\r\n";
+        std::string raw_response = "HTTP/1.1 200 OK\r\n"
+                                   "Content-Type: application/json\r\n"
+                                   "Content-Lenght: 21\r\n"
+                                   "\r\n"
+                                   "{\"status\": \"success\"}\r\n";
 
         HttpResponse response = HttpResponse::parse(raw_response);
         REQUIRE(response.status_code == 200);
@@ -83,18 +83,18 @@ TEST_CASE("HttpClient - Response Parsing", "[client]") {
     }
 
     SECTION("Parse error response") {
-        std::string raw_response =
-            "HTTP/1.1 404 Not found\r\n"
-            "Content-Type: text/plain\r\n"
-            "Content-Length: 21\r\n"
-            "\r\n"
-            "Resource not found\r\n";
+        std::string raw_response = "HTTP/1.1 404 Not found\r\n"
+                                   "Content-Type: text/plain\r\n"
+                                   "Content-Length: 20\r\n"
+                                   "\r\n"
+                                   "Resource not found\r\n";
 
         HttpResponse response = HttpResponse::parse(raw_response);
         REQUIRE(response.status_code == 404);
         REQUIRE(response.reason_phrase == "Not found");
         REQUIRE(response.get_header("content-type") == "text/plain");
-        REQUIRE(response.body == "Resource not found");
+        REQUIRE(response.get_header("content-length") == "20");
+        REQUIRE(response.body == "Resource not found\r\n");
     }
 }
 

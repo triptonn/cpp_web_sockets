@@ -3,16 +3,15 @@
 //
 
 #include <bits/types/struct_timeval.h>
-#include <chrono>
-#include <exception>
 #include <netdb.h>
+#include <stdexcept>
 #include <sys/select.h>
 #include <sys/socket.h>
 
 #include <algorithm>
-#include <boost/asio.hpp>
-#include <boost/system/error_code.hpp>
+#include <chrono>
 #include <cstring>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -26,6 +25,8 @@
 #include "../core/http.hpp"
 #include "../core/logger.hpp"
 #include "../core/string_utils.hpp"
+#include <boost/asio.hpp>
+#include <boost/system/error_code.hpp>
 
 HttpRequest HttpRequest::parse(const std::string &raw_request) {
     HttpRequest request;
@@ -33,8 +34,26 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
     std::string line;
 
     if (std::getline(stream, line)) {
-        std::istringstream request_line(line);
-        request_line >> request.method >> request.path >> request.version;
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        size_t first_space = line.find(' ');
+        if (first_space != std::string::npos) {
+            request.method = line.substr(0, first_space);
+            size_t second_space = line.find(' ', first_space + 1);
+            if (second_space != std::string::npos) {
+                request.path = line.substr(first_space + 1,
+                                           second_space - first_space - 1);
+                request.version = line.substr(second_space + 1);
+            } else if (line.substr(first_space + 1).front() == '/') {
+                request.path = line.substr(first_space + 1,
+                                           second_space - first_space - 1);
+            }
+        } else {
+            throw std::runtime_error("Error parsing the raw request. "
+                                     "Request line is missing critical data.");
+        }
     }
 
     while (std::getline(stream, line) && !line.empty() && line != "\r") {
@@ -56,29 +75,34 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
 
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return std::tolower(c); });
-
+            std::cout << "key: " << key << ", value: " << value << "\n";
             request.headers[key] = value;
         }
     }
 
     std::string body;
     if (request.has_header("content-length")) {
-        size_t content_length = std::stoul(request.get_header("content-length"));
+        size_t content_length =
+            std::stoul(request.get_header("content-length"));
         std::vector<char> body_buffer(content_length);
-        // stream.ignore(2); // ignore \r\n
+        std::cout << "body stream filled with: " << body_buffer.data() << "\n";
         if (stream.read(body_buffer.data(), content_length)) {
             request.body = std::string(body_buffer.data(), content_length);
         }
+        std::cout << "body wcl: " << body << "\n";
     } else {
         std::stringstream body_stream;
         body_stream << stream.rdbuf();
+        std::cout << "body stream filled with: " << body_stream.gcount()
+                  << "\n";
         request.body = body_stream.str();
-        if (!request.body.empty() && request.body.back() == '\n') {
+        /* if (!request.body.empty() && request.body.back() == '\n') {
             request.body.pop_back();
             if (!request.body.empty() && request.body.back() == '\r') {
                 request.body.pop_back();
             }
-        }
+        } */
+        std::cout << "body nudy: " << body << "\n";
     }
     return request;
 }
@@ -346,7 +370,7 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
     std::string line;
 
     if (std::getline(stream, line)) {
-        if (!line.empty() || line.back() == '\r') {
+        if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
 
@@ -382,16 +406,15 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
 
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return std::tolower(c); });
-
             response.headers[key] = value;
         }
     }
 
     std::string body;
     if (response.has_header("content-length")) {
-        size_t content_length = std::stoul(response.get_header("content-length"));
+        size_t content_length =
+            std::stoul(response.get_header("content-length"));
         std::vector<char> body_buffer(content_length);
-        stream.ignore(2); // skip \r\n
         if (stream.read(body_buffer.data(), content_length)) {
             response.body = std::string(body_buffer.data(), content_length);
         }
@@ -399,12 +422,6 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
         std::stringstream body_stream;
         body_stream << stream.rdbuf();
         response.body = body_stream.str();
-        if (!response.body.empty() && response.body.back() == '\n') {
-            response.body.pop_back();
-            if (!response.body.empty() && response.body.back() == '\r') {
-                response.body.pop_back();
-            }
-        }
     }
     return response;
 }
@@ -617,8 +634,7 @@ HttpServer::HttpServer(int16_t port) {
     server_socket = std::make_unique<SocketGuard>(fd);
     server_fd = server_socket->get();
 
-    server_log.write("Server " + std::to_string(server_fd) +
-                     " started");
+    server_log.write("Server " + std::to_string(server_fd) + " started");
 
     flags = fcntl(server_fd, F_GETFL);
     fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
@@ -627,14 +643,15 @@ HttpServer::HttpServer(int16_t port) {
     addr.sin_port = htons(host_port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) == -1) {
-        server_log.write("Server failed to bind to port " + std::to_string(host_port));
-        throw std::runtime_error("Port already in use or in TIME_WAIT state");;
+    if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&addr),
+             sizeof(addr)) == -1) {
+        server_log.write("Server failed to bind to port " +
+                         std::to_string(host_port));
+        throw std::runtime_error("Port already in use or in TIME_WAIT state");
     } else {
         server_log.write("Server bound to port " + std::to_string(host_port));
     }
 }
-
 
 void HttpServer::start() {
     if (server_running.load()) {
@@ -651,11 +668,6 @@ void HttpServer::start() {
 
     server_thread = std::thread([this]() {
         while (server_running.load()) {
-            /* std::chrono::milliseconds to = std::chrono::milliseconds(100);
-            auto event = event_loop.wait_for_event(to);
-            if (event != std::nullopt) {
-                handle_event(event);
-            } */
             main_loop();
         }
     });
@@ -708,30 +720,23 @@ void HttpServer::main_loop() {
 
         if (select_return > 0) {
             if (fd_set.is_set(server_fd)) {
-                event_loop.push_event({
-                    ServerEventLoop::EventType::NEW_CONNECTION,
-                    server_fd,
-                    ""
-                });
+                event_loop.push_event(
+                    {ServerEventLoop::EventType::NEW_CONNECTION, server_fd,
+                     ""});
             }
 
             if (fd_set.is_set(STDIN_FILENO)) {
                 std::string input;
                 std::getline(std::cin, input);
-                event_loop.push_event({
-                    ServerEventLoop::EventType::SERVER_COMMAND,
-                    STDIN_FILENO,
-                    ""
-                });
+                event_loop.push_event(
+                    {ServerEventLoop::EventType::SERVER_COMMAND, STDIN_FILENO,
+                     ""});
             }
 
             for (int fd : client_manager.get_client_fds()) {
                 if (fd_set.is_set(fd)) {
-                    event_loop.push_event({
-                        ServerEventLoop::EventType::CLIENT_DATA,
-                        fd,
-                        ""
-                    });
+                    event_loop.push_event(
+                        {ServerEventLoop::EventType::CLIENT_DATA, fd, ""});
                 }
             }
         }

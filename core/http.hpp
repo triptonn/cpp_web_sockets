@@ -4,11 +4,9 @@
 
 #pragma once
 #include <arpa/inet.h>
-#include <chrono>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <optional>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -18,6 +16,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <set>
 #include <stdexcept>
@@ -353,7 +353,7 @@ class ServerEventLoop {
             }
         }
 
-        void push_event(const Event& event) {
+        void push_event(const Event &event) {
             std::lock_guard<std::mutex> lock(event_mutex);
             event_queue.push(event);
             event_cv.notify_one();

@@ -3,11 +3,11 @@
 //
 
 #define CATCH_CONFIG_MAIN
-#include <set>
-#include <stdexcept>
 #include "../core/http.hpp"
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <set>
+#include <stdexcept>
 
 int main(int argc, char *argv[]) { return Catch::Session().run(argc, argv); }
 
@@ -89,7 +89,8 @@ TEST_CASE("HttpServer - Component Organisation", "[server][constructors]") {
     }
 }
 
-TEST_CASE("HttpServer - Socket Resource Management", "[server][resource_management]") {
+TEST_CASE("HttpServer - Socket Resource Management",
+          "[server][resource_management]") {
     SECTION("Socket Resource Management") {
         int test_fd = socket(AF_INET, SOCK_STREAM, 0);
         {
@@ -99,7 +100,8 @@ TEST_CASE("HttpServer - Socket Resource Management", "[server][resource_manageme
     }
 }
 
-TEST_CASE("HttpServer - Client Collection Management", "[server][client_management]") {
+TEST_CASE("HttpServer - Client Collection Management",
+          "[server][client_management]") {
     SECTION("Client Collection Management") {
         ClientManager manager;
         manager.add_client(std::make_unique<ClientSession>(5, "127.0.0.1"));
@@ -108,7 +110,8 @@ TEST_CASE("HttpServer - Client Collection Management", "[server][client_manageme
     }
 }
 
-TEST_CASE("HttpServer - Connection Management", "[server][connection_management]") {
+TEST_CASE("HttpServer - Connection Management",
+          "[server][connection_management]") {
     SECTION("Starting up server") {
         HttpServer server(8082);
         REQUIRE_NOTHROW(server.start());
@@ -128,28 +131,29 @@ TEST_CASE("HttpServer - Connection Management", "[server][connection_management]
         REQUIRE(second_client.connect_to_server() == 0);
     }
 
-    SECTION("Stopping running server") {
-        REQUIRE_NOTHROW(server.stop());
-    }
+    SECTION("Stopping running server") { REQUIRE_NOTHROW(server.stop()); }
 }
 
 TEST_CASE("HttpServer - Route Handling", "[server][route_handling]") {
     HttpServer server(8084);
 
     SECTION("Register GET route handler") {
-        REQUIRE_NOTHROW(server.register_get("/test", [](const HttpRequest &req) -> HttpResponse {
-            return HttpResponse::ok("Test response");
-        }));
+        REQUIRE_NOTHROW(server.register_get(
+            "/test", [](const HttpRequest &req) -> HttpResponse {
+                return HttpResponse::ok("Test response");
+            }));
     }
 
     SECTION("Register POST route handler") {
-        REQUIRE_NOTHROW(server.register_post("/api/data", [](const HttpRequest &req) -> HttpResponse {
-            if (req.has_header("content-type") &&
-                req.get_header("content-type") == "application/json") {
-                return HttpResponse::json_response("{\"status\":\"success\"}");
-            }
-            return HttpResponse::bad_request("Invalid content-type");
-        }));
+        REQUIRE_NOTHROW(server.register_post(
+            "/api/data", [](const HttpRequest &req) -> HttpResponse {
+                if (req.has_header("content-type") &&
+                    req.get_header("content-type") == "application/json") {
+                    return HttpResponse::json_response(
+                        "{\"status\":\"success\"}");
+                }
+                return HttpResponse::bad_request("Invalid content-type");
+            }));
     }
 
     SECTION("Start server with registered routes") {
@@ -158,37 +162,38 @@ TEST_CASE("HttpServer - Route Handling", "[server][route_handling]") {
     server.stop();
 }
 
-
 TEST_CASE("HttpServer - Request Handling", "[server][request_handling]") {
-    HttpServer server(8085);
-
-    server.register_get("/test", [](const HttpRequest &req) -> HttpResponse {
-        return HttpResponse::ok("GET test response");
-    });
-
-    server.register_post("/api/data", [](const HttpRequest &req) -> HttpResponse {
-        if (req.has_header("content-type") &&
-            req.get_header("content-type") == "application/json") {
-            return HttpResponse::json_response("{\"status\":\"success\"}");
-        }
-        return HttpResponse::bad_request("Invalid content-type");
-    });
-    
-    server.start();
-
-    HttpClient client("localhost", 8085);
-    client.connect_to_server();
-
-    HttpRequest test_request;
-    test_request.create_get("/test");
-
     SECTION("Respond to GET request on registered get route") {
+        HttpServer server(8085);
+
+        server.register_get("/test",
+                            [](const HttpRequest &req) -> HttpResponse {
+                                return HttpResponse::ok("GET test response");
+                            });
+
+        server.register_post(
+            "/api/data", [](const HttpRequest &req) -> HttpResponse {
+                if (req.has_header("content-type") &&
+                    req.get_header("content-type") == "application/json") {
+                    return HttpResponse::json_response(
+                        "{\"status\":\"success\"}");
+                }
+                return HttpResponse::bad_request("Invalid content-type");
+            });
+
+        server.start();
+
+        HttpClient client("localhost", 8085);
+        client.connect_to_server();
+
+        HttpRequest test_request;
+        test_request.create_get("/test");
+
         HttpResponse response = client.send_request(test_request);
         REQUIRE(response.status_code == 200);
         REQUIRE(response.body == "GET test response");
+        client.disconnect();
     }
-
-    client.disconnect();
 
     /* SECTION("Register POST route handler") {
 
@@ -208,7 +213,6 @@ TEST_CASE("HttpServer - Request Handling", "[server][request_handling]") {
         auto response = server.handle_request(test_request);
         REQUIRE(response.status_code == 404);
     } */
-
 }
 
 /* TEST_CASE("HttpServer - Response Streaming", "[server]") {
