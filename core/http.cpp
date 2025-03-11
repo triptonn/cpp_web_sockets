@@ -580,6 +580,33 @@ bool HttpClient::resolve_hostname() {
 // HTTP Server
 /////////////////////////////////
 
+HttpServer::HttpServer(int16_t port) {
+    host_port = port;
+    if (host_port < 1024) {
+        throw std::runtime_error("Port number must not be below 1024");
+    }
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    server_socket = std::make_unique<SocketGuard>(fd);
+    server_fd = server_socket->get();
+
+    server_log.write("Server " + std::to_string(server_fd) +
+                     " started");
+
+    int reuse = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
+                   sizeof(reuse)) < 0) {
+        throw std::runtime_error("Failed to set SO_REUSEADDR");
+    }
+    flags = fcntl(server_fd, F_GETFL);
+    fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(host_port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+}
+
+
 void HttpServer::start() {
     if (server_running.load()) {
         return;
