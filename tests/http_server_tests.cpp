@@ -3,6 +3,7 @@
 //
 
 #include <set>
+#include <stdexcept>
 #define CATCH_CONFIG_MAIN
 #include "../core/http.hpp"
 #include <catch2/catch_session.hpp>
@@ -19,10 +20,10 @@ TEST_CASE("HttpServer - Basic Setup", "[server]") {
         REQUIRE_THROWS_AS(HttpServer(80), std::runtime_error);
     }
 
-    /* SECTION("Server initialization with already in use port") {
+    SECTION("Server initialization with already in use port") {
         HttpServer server1(8081);
-        REQUIRE_THROWS_AS(HttpServer(8081); std::runtime_error);
-    } */
+        REQUIRE_THROWS_AS(HttpServer(8081), std::runtime_error);
+    }
 }
 
 TEST_CASE("HttpServer - File Descriptor Management",

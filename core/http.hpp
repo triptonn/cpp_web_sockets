@@ -558,4 +558,6 @@ class HttpServer {
         bool check_connection(int client_fd);
 
         HttpResponse route_request(const HttpRequest &request);
+
+        bool port_in_use(int16_t port);
 };

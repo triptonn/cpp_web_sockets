@@ -3,11 +3,14 @@
 //
 
 #include <bits/types/struct_timeval.h>
+#include <exception>
 #include <netdb.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 
 #include <algorithm>
+#include <boost/asio.hpp>
+#include <boost/system/error_code.hpp>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -593,17 +596,16 @@ HttpServer::HttpServer(int16_t port) {
     server_log.write("Server " + std::to_string(server_fd) +
                      " started");
 
-    int reuse = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
-                   sizeof(reuse)) < 0) {
-        throw std::runtime_error("Failed to set SO_REUSEADDR");
-    }
     flags = fcntl(server_fd, F_GETFL);
     fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(host_port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (port_in_use(host_port)) {
+        throw std::runtime_error("Port already in use or in TIME_WAIT state");;
+    }
 }
 
 
@@ -858,4 +860,14 @@ HttpResponse HttpServer::route_request(const HttpRequest &request) {
         }
     }
     return HttpResponse::not_found(request.path);
+}
+
+bool HttpServer::port_in_use(int16_t port) {
+    bool res = false;
+    int bind_return = bind(
+        server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
+    if (bind_return < 0) {
+        res = true;
+    }
+    return res;
 }
