@@ -2,23 +2,26 @@
 //
 //
 
-#include <algorithm>
 #include <bits/types/struct_timeval.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+
+#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <memory>
-#include <netdb.h>
 #include <sstream>
 #include <string>
-
-#include <sys/select.h>
-#include <sys/socket.h>
 #include <thread>
+#include <utility>
+#include <vector>
 
-#include "http.hpp"
-#include "logger.hpp"
-#include "string_utils.hpp"
+#include "../core/http.hpp"
+#include "../core/logger.hpp"
+#include "../core/string_utils.hpp"
 
 HttpRequest HttpRequest::parse(const std::string &raw_request) {
     HttpRequest request;
@@ -72,7 +75,7 @@ bool HttpRequest::has_header(const std::string &name) const {
     return headers.find(lower_name) != headers.end();
 }
 
-std::string HttpRequest::get_header(const std::string &name) const  {
+std::string HttpRequest::get_header(const std::string &name) const {
     std::string lower_name = name;
     std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
                    [](unsigned char c) { return std::tolower(c); });
@@ -80,8 +83,7 @@ std::string HttpRequest::get_header(const std::string &name) const  {
     return (it != headers.end()) ? it->second : "";
 }
 
-void HttpRequest::set_header(const std::string &key,
-                             const std::string &value) {
+void HttpRequest::set_header(const std::string &key, const std::string &value) {
     std::string lower_key = key;
     std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
                    [](unsigned char c) { return std::tolower(c); });
@@ -271,7 +273,8 @@ HttpResponse HttpResponse::html_response(const std::string &html_body) {
     return response;
 }
 
-HttpResponse HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
+HttpResponse
+HttpResponse::binary_response(const std::vector<uint8_t> &binary_body) {
     HttpResponse response(200, "OK");
     response.set_binary_body(binary_body);
     response.set_header("Content-Type", "image/png");
@@ -312,7 +315,7 @@ void HttpResponse::set_streaming(
     set_header("Content-Length", std::to_string(content_length));
 }
 
-// TODO: Implement protocol switching using correct header values
+// TODO(triptonn): Implement protocol switching using correct header values
 /* HttpResponse HttpResponse::switching_protocol() {
     HttpResponse response(101, "Switching Protocols");
     response.set_header("Upgrade", "websocket");
@@ -327,7 +330,7 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
     std::string line;
 
     if (std::getline(stream, line)) {
-        if(!line.empty() && line.back() == '\r') {
+        if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
 
@@ -336,7 +339,8 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
             response.version = line.substr(0, first_space);
             size_t second_space = line.find(' ', first_space + 1);
             if (second_space != std::string::npos) {
-                std::string status_code_str = line.substr(first_space + 1, second_space - first_space - 1);
+                std::string status_code_str = line.substr(
+                    first_space + 1, second_space - first_space - 1);
                 response.status_code = std::stoi(status_code_str);
                 response.reason_phrase = line.substr(second_space + 1);
             }
@@ -410,8 +414,9 @@ HttpResponse &HttpResponse::set_body(const std::string &content,
     return *this;
 }
 
-HttpResponse &HttpResponse::set_binary_body(const std::vector<uint8_t> &binary_content,
-                                            const std::string &content_type) {
+HttpResponse &
+HttpResponse::set_binary_body(const std::vector<uint8_t> &binary_content,
+                              const std::string &content_type) {
     body = std::string(binary_content.begin(), binary_content.end());
     is_binary = true;
     set_header("Content-Type", content_type);
@@ -419,7 +424,7 @@ HttpResponse &HttpResponse::set_binary_body(const std::vector<uint8_t> &binary_c
     return *this;
 }
 
-void HttpResponse::write_to_stream(std::ostream& os) const {
+void HttpResponse::write_to_stream(std::ostream &os) const {
     if (is_streaming && stream_callback) {
         stream_callback(os);
     }
@@ -456,7 +461,8 @@ std::string HttpResponse::to_string() const {
 signed int HttpClient::connect_to_server() {
     if (connect(client_fd, reinterpret_cast<struct sockaddr *>(&addr),
                 sizeof(addr)) < 0) {
-        client_log.write("Client " + std::to_string(client_fd) + " failed to connect");
+        client_log.write("Client " + std::to_string(client_fd) +
+                         " failed to connect");
         close(client_fd);
         return -1;
     }
@@ -475,7 +481,8 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
         throw std::runtime_error("Failed to send request");
     }
 
-    client_log.write("Client " + std::to_string(client_fd) + " sent request: " + request.method + ", " + request.path);
+    client_log.write("Client " + std::to_string(client_fd) +
+                     " sent request: " + request.method + ", " + request.path);
 
     std::string response_data;
     char buffer[4096];
@@ -506,7 +513,8 @@ HttpResponse HttpClient::send_request(HttpRequest request) {
             break;
         }
 
-        client_log.write("Client " + std::to_string(client_fd) + " received response");
+        client_log.write("Client " + std::to_string(client_fd) +
+                         " received response");
 
         buffer[bytes_received] = '\0';
         response_data += buffer;
@@ -526,7 +534,7 @@ void HttpClient::disconnect() {
 bool HttpClient::resolve_hostname() {
     struct addrinfo hints;
     struct addrinfo *result;
- 
+
     memset(&hints, 0, sizeof(hints));
 
     hints.ai_family = AF_UNSPEC;
@@ -538,7 +546,8 @@ bool HttpClient::resolve_hostname() {
         getaddrinfo(hostname.c_str(), port_str.c_str(), &hints, &result);
 
     if (status != 0) {
-        throw std::runtime_error("Error using getaddrinfo: " + std::to_string(*gai_strerror(status)));
+        throw std::runtime_error("Error using getaddrinfo: " +
+                                 std::to_string(*gai_strerror(status)));
         return false;
     }
 
@@ -559,7 +568,8 @@ bool HttpClient::resolve_hostname() {
     freeaddrinfo(result);
 
     if (rp == nullptr) {
-        throw std::runtime_error("Could not resolve hostname '" + hostname + "'");
+        throw std::runtime_error("Could not resolve hostname '" + hostname +
+                                 "'");
         return false;
     }
 
@@ -591,7 +601,10 @@ void HttpServer::start() {
     server_log.write("Server starting on port " + std::to_string(host_port));
 
     server_thread = std::thread([this]() {
-        this->main_loop();
+        while (server_running.load()) {
+            auto event = event_loop.wait_for_event();
+            handle_event(event);
+        }
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -641,9 +654,8 @@ void HttpServer::main_loop() {
         timeout.tv_usec = 100000;
 
         int select_return =
-            select(fd_set.get_max_fd() + 1,
-                   fd_set.get_read_fds(),
-                   nullptr, nullptr, &timeout);
+            select(fd_set.get_max_fd() + 1, fd_set.get_read_fds(), nullptr,
+                   nullptr, &timeout);
 
         if (select_return < 0) {
             continue;
@@ -657,19 +669,61 @@ void HttpServer::main_loop() {
             break;
         }
 
-        if (fd_set.is_set(server_fd)) {
-            handle_new_connection();
-        }
-
-        if (fd_set.is_set(STDIN_FILENO)) {
-            handle_user_input();
-        }
-
-        for (int fd : client_manager.get_client_fds()) {
-            if(fd_set.is_set(fd) && client_manager.has_client(fd)) {
-                handle_client_data(fd);
+        auto events = event_loop.poll_events(fd_set);
+        for (const auto &event : events) {
+            switch (event.type) {
+            case ServerEventLoop::EventType::NEW_CONNECTION:
+                handle_new_connection();
+                break;
+            case ServerEventLoop::EventType::CLIENT_DATA:
+                handle_client_data(event.fd);
+                break;
+            case ServerEventLoop::EventType::CLIENT_DISCONNECT:
+                handle_client_disconnect(event.fd);
+                break;
+            case ServerEventLoop::EventType::SERVER_COMMAND:
+                if (event.data == "quit") {
+                    stop();
+                }
+                break;
+            default:
+                break;
             }
         }
+    }
+}
+
+void HttpServer::handle_event(const ServerEventLoop::Event &event) {
+    if (!server_running.load()) {
+        return;
+    }
+
+    try {
+        switch (event.type) {
+        case ServerEventLoop::EventType::NEW_CONNECTION:
+            handle_new_connection();
+            break;
+        case ServerEventLoop::EventType::CLIENT_DATA:
+            if (client_manager.has_client(event.fd)) {
+                handle_client_data(event.fd);
+            }
+            break;
+        case ServerEventLoop::EventType::CLIENT_DISCONNECT:
+            if (client_manager.has_client(event.fd)) {
+                handle_client_disconnect(event.fd);
+            }
+            break;
+        case ServerEventLoop::EventType::SERVER_COMMAND:
+            if (event.data == "quit") {
+                stop();
+            }
+            break;
+        default:
+            server_log.write("Unknown event type received");
+            break;
+        }
+    } catch (const std::exception &e) {
+        server_log.write("Error handling event: " + std::string(e.what()));
     }
 }
 
@@ -705,8 +759,10 @@ void HttpServer::handle_user_input() {
     }
 }
 
-void HttpServer::handle_new_client(int client_fd, const sockaddr_in& client_addr) {
-    std::unique_ptr<ClientSession> session_ptr(new ClientSession(client_fd, std::to_string(client_addr.sin_addr.s_addr)));
+void HttpServer::handle_new_client(int client_fd,
+                                   const sockaddr_in &client_addr) {
+    std::unique_ptr<ClientSession> session_ptr(new ClientSession(
+        client_fd, std::to_string(client_addr.sin_addr.s_addr)));
     fd_set.add(client_fd);
     client_manager.add_client(std::move(session_ptr));
 
@@ -759,7 +815,8 @@ void HttpServer::handle_client_disconnect(int client_fd) {
 
     close(client_fd);
 
-    std::string log_message = "Client " + std::to_string(client_fd) + " disconnected";
+    std::string log_message =
+        "Client " + std::to_string(client_fd) + " disconnected";
     server_log.write(log_message);
 }
 
@@ -774,4 +831,4 @@ HttpResponse HttpServer::route_request(const HttpRequest &request) {
         }
     }
     return HttpResponse::not_found(request.path);
-};
+}
