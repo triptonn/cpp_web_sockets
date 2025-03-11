@@ -25,7 +25,8 @@ TEST_CASE("HttpServer - Basic Setup", "[server]") {
     } */
 }
 
-TEST_CASE("HttpServer - File Descriptor Management", "[server][fd_management]") {
+TEST_CASE("HttpServer - File Descriptor Management",
+          "[server][fd_management]") {
     SECTION("File Descriptor Set Management") {
         FdSet fd_set;
         int test_fd = 3;
@@ -61,7 +62,7 @@ TEST_CASE("HttpServer - File Descriptor Management", "[server][fd_management]") 
     }
 }
 
-/* TEST_CASE("HttpServer - Component Organisation", "[server]") {
+TEST_CASE("HttpServer - Component Organisation", "[server]") {
     SECTION("Client Session Management") {
         ClientSession session(5, "127.0.0.1");
         REQUIRE(session.get_fd() == 5);
@@ -71,16 +72,23 @@ TEST_CASE("HttpServer - File Descriptor Management", "[server][fd_management]") 
 
     SECTION("Server Event Loop Components") {
         ServerEventLoop loop;
-        ServerEventLoop::Event event{
-            ServerEventLoop::EventType::NEW_CONNECTION,
-            5,
-            ""
-        };
-        REQUIRE(loop.process_event(event));
-    }
-} */
 
-/* TEST_CASE("HttpServer - Socket Resource Management", "[server]") {
+        ServerEventLoop::Event connect_event{
+            ServerEventLoop::EventType::NEW_CONNECTION, 5, ""};
+
+        REQUIRE(loop.process_event(connect_event));
+
+        ServerEventLoop::Event data_event{
+            ServerEventLoop::EventType::CLIENT_DATA, 5, "test data"};
+        REQUIRE(loop.process_event(data_event));
+
+        ServerEventLoop::Event command_event{
+            ServerEventLoop::EventType::SERVER_COMMAND, STDIN_FILENO, "quit"};
+        REQUIRE(loop.process_event(command_event));
+    }
+}
+
+TEST_CASE("HttpServer - Socket Resource Management", "[server]") {
     SECTION("Socket Resource Management") {
         int test_fd = socket(AF_INET, SOCK_STREAM, 0);
         {
@@ -88,10 +96,10 @@ TEST_CASE("HttpServer - File Descriptor Management", "[server][fd_management]") 
             REQUIRE(guard.get() == test_fd);
         }
     }
-} */
+}
 
-// TODO: Socket should be closed here
-TEST_CASE("HttpServer - Client Collection Management", "[server][client_manager]") {
+TEST_CASE("HttpServer - Client Collection Management",
+          "[server][client_manager]") {
     SECTION("Client Collection Management") {
         ClientManager manager;
         manager.add_client(std::make_unique<ClientSession>(5, "127.0.0.1"));
