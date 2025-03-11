@@ -3,11 +3,12 @@
 //
 
 #define CATCH_CONFIG_MAIN
+#include <stdexcept>
+#include <string>
+
 #include "../core/http.hpp"
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <set>
-#include <stdexcept>
 
 int main(int argc, char *argv[]) { return Catch::Session().run(argc, argv); }
 
@@ -171,16 +172,6 @@ TEST_CASE("HttpServer - Request Handling", "[server][request_handling]") {
                                 return HttpResponse::ok("GET test response");
                             });
 
-        server.register_post(
-            "/api/data", [](const HttpRequest &req) -> HttpResponse {
-                if (req.has_header("content-type") &&
-                    req.get_header("content-type") == "application/json") {
-                    return HttpResponse::json_response(
-                        "{\"status\":\"success\"}");
-                }
-                return HttpResponse::bad_request("Invalid content-type");
-            });
-
         server.start();
 
         HttpClient client("localhost", 8085);
@@ -195,33 +186,57 @@ TEST_CASE("HttpServer - Request Handling", "[server][request_handling]") {
         client.disconnect();
     }
 
-    /* SECTION("Register POST route handler") {
+    SECTION("Register POST route handler") {
+        HttpServer server(8086);
+        server.register_post(
+            "/api/data", [](const HttpRequest &req) -> HttpResponse {
+                if (req.has_header("content-type") &&
+                    req.get_header("content-type") == "application/json") {
+                    return HttpResponse::json_response(
+                        "{\"status\":\"success\"}");
+                }
+                return HttpResponse::bad_request("Invalid content-type");
+            });
+
+        server.start();
+
+        HttpClient client("localhost", 8086);
+        client.connect_to_server();
 
         HttpRequest test_request;
         test_request.create_post("/api/data");
         test_request.set_header("Content-Type", "application/json");
 
-        auto response = server.handle_request(test_request);
+        auto response = client.send_request(test_request);
         REQUIRE(response.status_code == 200);
         REQUIRE(response.get_header("content-type") == "application/json");
+        client.disconnect();
+        server.stop();
     }
 
     SECTION("Handle non-existent route") {
+        HttpServer server(8087);
+        server.start();
+
+        HttpClient client("localhost", 8087);
+        client.connect_to_server();
+
         HttpRequest test_request;
         test_request.create_get("/nonextistent");
 
-        auto response = server.handle_request(test_request);
+        auto response = client.send_request(test_request);
         REQUIRE(response.status_code == 404);
-    } */
+        client.disconnect();
+        server.stop();
+    }
 }
 
-/* TEST_CASE("HttpServer - Response Streaming", "[server]") {
-    HttpServer server(8084);
-
+TEST_CASE("HttpServer - Response Streaming", "[server]") {
     SECTION("Stream large response") {
-        std::string large_data(1014 * 1014, 'X');  // 1MB of data
+        HttpServer server(8088);
+        std::string large_data(1024 * 1024, 'X');  // 1MB of data
 
-        server.get(
+        server.register_get(
             "/stream", [&large_data](const HttpRequest &req) -> HttpResponse {
                 HttpResponse response;
                 response.set_streaming(
@@ -229,13 +244,18 @@ TEST_CASE("HttpServer - Request Handling", "[server][request_handling]") {
                     large_data.length(), "text/plain");
                 return response;
             });
+        server.start();
 
-        HttpClient client("localhost", 8084);
+        HttpClient client("localhost", 8088);
         client.connect_to_server();
         HttpRequest request;
         request.create_get("/stream");
 
-        auto response = client.send_request(request);
-        REQUIRE(response.body.lenth() == large_data.length());
+        HttpResponse response = client.send_request(request);
+        REQUIRE(response.get_header("content-length") ==
+                std::to_string(large_data.length()));
+        REQUIRE(response.body.length() == large_data.length());
+        client.disconnect();
+        server.stop();
     }
-} */
+}

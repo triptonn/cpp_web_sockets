@@ -75,7 +75,6 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
 
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return std::tolower(c); });
-            std::cout << "key: " << key << ", value: " << value << "\n";
             request.headers[key] = value;
         }
     }
@@ -85,24 +84,13 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
         size_t content_length =
             std::stoul(request.get_header("content-length"));
         std::vector<char> body_buffer(content_length);
-        std::cout << "body stream filled with: " << body_buffer.data() << "\n";
         if (stream.read(body_buffer.data(), content_length)) {
             request.body = std::string(body_buffer.data(), content_length);
         }
-        std::cout << "body wcl: " << body << "\n";
     } else {
         std::stringstream body_stream;
         body_stream << stream.rdbuf();
-        std::cout << "body stream filled with: " << body_stream.gcount()
-                  << "\n";
         request.body = body_stream.str();
-        /* if (!request.body.empty() && request.body.back() == '\n') {
-            request.body.pop_back();
-            if (!request.body.empty() && request.body.back() == '\r') {
-                request.body.pop_back();
-            }
-        } */
-        std::cout << "body nudy: " << body << "\n";
     }
     return request;
 }
