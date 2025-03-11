@@ -48,7 +48,8 @@ TEST_CASE("HTTP Request Parsing - Basic POST", "[http]") {
     REQUIRE(request.headers.size() == 3);
     REQUIRE(request.get_header("content-type") ==
             "application/x-www-form-urlencoded");
-    REQUIRE(request.body == "username=john&password=pass\n");
+    REQUIRE(request.get_header("content-length") == "27");
+    REQUIRE(request.body == "username=john&password=pass");
 }
 
 TEST_CASE("HTTP Request Parsing - Edge Cases", "[http]") {

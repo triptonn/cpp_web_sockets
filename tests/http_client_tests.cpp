@@ -94,7 +94,7 @@ TEST_CASE("HttpClient - Response Parsing", "[client]") {
         REQUIRE(response.status_code == 404);
         REQUIRE(response.reason_phrase == "Not found");
         REQUIRE(response.get_header("content-type") == "text/plain");
-        REQUIRE(response.body == "Resource not found\r\n");
+        REQUIRE(response.body == "Resource not found");
     }
 }
 

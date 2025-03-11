@@ -22,15 +22,15 @@ int main() {
 
     try {
         HttpServer server(8080);
-        server.get("/", [](const HttpRequest &req) {
+        server.register_get("/", [](const HttpRequest &req) {
             return HttpResponse::ok("Welcome to the test server");
         });
 
-        server.get("/test", [](const HttpRequest &req) {
+        server.register_get("/test", [](const HttpRequest &req) {
             return HttpResponse::ok("Test endpoint");
         });
 
-        server.post("/echo", [](const HttpRequest &req) {
+        server.register_post("/echo", [](const HttpRequest &req) {
             return HttpResponse::ok(req.body);
         });
 

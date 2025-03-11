@@ -4,9 +4,11 @@
 
 #pragma once
 #include <arpa/inet.h>
+#include <chrono>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <optional>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -351,37 +353,25 @@ class ServerEventLoop {
             }
         }
 
-        Event wait_for_event() {
-            std::unique_lock<std::mutex> lock(event_mutex);
-            event_cv.wait(lock, [this] { return !event_queue.empty(); });
+        void push_event(const Event& event) {
+            std::lock_guard<std::mutex> lock(event_mutex);
+            event_queue.push(event);
+            event_cv.notify_one();
+        }
 
+        bool has_events() {
+            std::lock_guard<std::mutex> lock(event_mutex);
+            return !event_queue.empty();
+        }
+
+        Event get_next_event() {
+            std::lock_guard<std::mutex> lock(event_mutex);
+            if (event_queue.empty()) {
+                return {EventType::NONE, -1, ""};
+            }
             Event event = event_queue.front();
             event_queue.pop();
             return event;
-        }
-
-        std::vector<Event> poll_events(const FdSet &fd_set) {
-            std::vector<Event> events;
-
-            if (fd_set.is_set(server_fd)) {
-                events.push_back({EventType::NEW_CONNECTION, server_fd, ""});
-            }
-
-            if (fd_set.is_set(STDIN_FILENO)) {
-                std::string input;
-                std::getline(std::cin, input);
-                events.push_back(
-                    {EventType::SERVER_COMMAND, STDIN_FILENO, input});
-            }
-
-            for (int fd : fd_set.get_fds()) {
-                if (fd != server_fd && fd != STDIN_FILENO &&
-                    fd_set.is_set(fd)) {
-                    events.push_back({EventType::CLIENT_DATA, fd, ""});
-                }
-            }
-
-            return events;
         }
 
     private:
@@ -454,6 +444,7 @@ class ClientManager {
 
         const std::unordered_map<int, std::unique_ptr<ClientSession>> &
         get_clients() const {
+            std::lock_guard<std::mutex> lock(mutex);
             return clients;
         }
 
@@ -498,11 +489,11 @@ class HttpServer {
         void start();
         void stop();
 
-        void get(const std::string &path, RouteHandler handler) {
+        void register_get(const std::string &path, RouteHandler handler) {
             register_route("GET", path, handler);
         }
 
-        void post(const std::string &path, RouteHandler handler) {
+        void register_post(const std::string &path, RouteHandler handler) {
             register_route("POST", path, handler);
         }
 

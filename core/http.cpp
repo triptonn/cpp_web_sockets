@@ -3,6 +3,7 @@
 //
 
 #include <bits/types/struct_timeval.h>
+#include <chrono>
 #include <exception>
 #include <netdb.h>
 #include <sys/select.h>
@@ -61,12 +62,23 @@ HttpRequest HttpRequest::parse(const std::string &raw_request) {
     }
 
     std::string body;
-    while (std::getline(stream, line)) {
-        body += line + "\n";
-    }
-
-    if (!body.empty()) {
-        request.body = body;
+    if (request.has_header("content-length")) {
+        size_t content_length = std::stoul(request.get_header("content-length"));
+        std::vector<char> body_buffer(content_length);
+        // stream.ignore(2); // ignore \r\n
+        if (stream.read(body_buffer.data(), content_length)) {
+            request.body = std::string(body_buffer.data(), content_length);
+        }
+    } else {
+        std::stringstream body_stream;
+        body_stream << stream.rdbuf();
+        request.body = body_stream.str();
+        if (!request.body.empty() && request.body.back() == '\n') {
+            request.body.pop_back();
+            if (!request.body.empty() && request.body.back() == '\r') {
+                request.body.pop_back();
+            }
+        }
     }
     return request;
 }
@@ -257,6 +269,7 @@ HttpResponse HttpResponse::ok(const std::string &body) {
     HttpResponse response(200, "OK");
     response.set_header("Content-Type", "text/plain");
     if (!body.empty()) {
+        response.set_header("Content-Length", std::to_string(body.length()));
         response.set_body(body);
     }
     return response;
@@ -333,7 +346,7 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
     std::string line;
 
     if (std::getline(stream, line)) {
-        if (!line.empty() && line.back() == '\r') {
+        if (!line.empty() || line.back() == '\r') {
             line.pop_back();
         }
 
@@ -375,12 +388,23 @@ HttpResponse HttpResponse::parse(const std::string &raw_response) {
     }
 
     std::string body;
-    while (std::getline(stream, line)) {
-        body += line + "\n";
-    }
-
-    if (!body.empty()) {
-        response.body = body;
+    if (response.has_header("content-length")) {
+        size_t content_length = std::stoul(response.get_header("content-length"));
+        std::vector<char> body_buffer(content_length);
+        stream.ignore(2); // skip \r\n
+        if (stream.read(body_buffer.data(), content_length)) {
+            response.body = std::string(body_buffer.data(), content_length);
+        }
+    } else {
+        std::stringstream body_stream;
+        body_stream << stream.rdbuf();
+        response.body = body_stream.str();
+        if (!response.body.empty() && response.body.back() == '\n') {
+            response.body.pop_back();
+            if (!response.body.empty() && response.body.back() == '\r') {
+                response.body.pop_back();
+            }
+        }
     }
     return response;
 }
@@ -603,8 +627,11 @@ HttpServer::HttpServer(int16_t port) {
     addr.sin_port = htons(host_port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if (port_in_use(host_port)) {
+    if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) == -1) {
+        server_log.write("Server failed to bind to port " + std::to_string(host_port));
         throw std::runtime_error("Port already in use or in TIME_WAIT state");;
+    } else {
+        server_log.write("Server bound to port " + std::to_string(host_port));
     }
 }
 
@@ -612,13 +639,6 @@ HttpServer::HttpServer(int16_t port) {
 void HttpServer::start() {
     if (server_running.load()) {
         return;
-    }
-
-    int bind_return = bind(
-        server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
-
-    if (bind_return < 0) {
-        throw std::runtime_error("Server failed to bind");
     }
 
     int listen_return = listen(server_fd, fd_set.get_max_fd());
@@ -631,16 +651,16 @@ void HttpServer::start() {
 
     server_thread = std::thread([this]() {
         while (server_running.load()) {
-            auto event = event_loop.wait_for_event();
-            handle_event(event);
+            /* std::chrono::milliseconds to = std::chrono::milliseconds(100);
+            auto event = event_loop.wait_for_event(to);
+            if (event != std::nullopt) {
+                handle_event(event);
+            } */
+            main_loop();
         }
     });
-
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
-
-void register_route(const std::string &path,
-                    std::function<HttpResponse(const HttpRequest &)> handler) {}
 
 void HttpServer::stop() {
     if (!server_running.load()) {
@@ -686,38 +706,39 @@ void HttpServer::main_loop() {
             select(fd_set.get_max_fd() + 1, fd_set.get_read_fds(), nullptr,
                    nullptr, &timeout);
 
-        if (select_return < 0) {
-            continue;
-        }
-
-        if (!server_running.load()) {
-            if (errno == EINTR) {
-                continue;
+        if (select_return > 0) {
+            if (fd_set.is_set(server_fd)) {
+                event_loop.push_event({
+                    ServerEventLoop::EventType::NEW_CONNECTION,
+                    server_fd,
+                    ""
+                });
             }
-            server_log.write("Select error: " + std::string(strerror(errno)));
-            break;
-        }
 
-        auto events = event_loop.poll_events(fd_set);
-        for (const auto &event : events) {
-            switch (event.type) {
-            case ServerEventLoop::EventType::NEW_CONNECTION:
-                handle_new_connection();
-                break;
-            case ServerEventLoop::EventType::CLIENT_DATA:
-                handle_client_data(event.fd);
-                break;
-            case ServerEventLoop::EventType::CLIENT_DISCONNECT:
-                handle_client_disconnect(event.fd);
-                break;
-            case ServerEventLoop::EventType::SERVER_COMMAND:
-                if (event.data == "quit") {
-                    stop();
+            if (fd_set.is_set(STDIN_FILENO)) {
+                std::string input;
+                std::getline(std::cin, input);
+                event_loop.push_event({
+                    ServerEventLoop::EventType::SERVER_COMMAND,
+                    STDIN_FILENO,
+                    ""
+                });
+            }
+
+            for (int fd : client_manager.get_client_fds()) {
+                if (fd_set.is_set(fd)) {
+                    event_loop.push_event({
+                        ServerEventLoop::EventType::CLIENT_DATA,
+                        fd,
+                        ""
+                    });
                 }
-                break;
-            default:
-                break;
             }
+        }
+
+        while (event_loop.has_events()) {
+            auto event = event_loop.get_next_event();
+            handle_event(event);
         }
     }
 }
@@ -860,14 +881,4 @@ HttpResponse HttpServer::route_request(const HttpRequest &request) {
         }
     }
     return HttpResponse::not_found(request.path);
-}
-
-bool HttpServer::port_in_use(int16_t port) {
-    bool res = false;
-    int bind_return = bind(
-        server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
-    if (bind_return < 0) {
-        res = true;
-    }
-    return res;
 }
